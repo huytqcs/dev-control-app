@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"sync"
 	"time"
 
+	"devctl/internal/config"
 	"devctl/internal/logs"
 	"devctl/internal/workspace"
 )
@@ -18,7 +20,35 @@ var (
 	ErrServiceNotFound       = errors.New("service not found")
 	ErrServiceAlreadyRunning = errors.New("service already running")
 	ErrServiceNotRunning     = errors.New("service not running")
+
+	ErrWorkerNotFound       = errors.New("worker not found")
+	ErrWorkerAlreadyRunning = errors.New("worker already running")
+	ErrWorkerNotRunning     = errors.New("worker not running")
 )
+
+// HealthMonitor starts/stops per-service health probing. Implemented by
+// internal/health.Monitor; defined here (structurally, not by import) so the
+// runtime package doesn't need to depend on the health package's own
+// dependencies — only app.go, the composition root, wires the two together.
+type HealthMonitor interface {
+	Start(serviceID string, checks []config.HealthCheck)
+	Stop(serviceID string)
+}
+
+type noopHealthMonitor struct{}
+
+func (noopHealthMonitor) Start(string, []config.HealthCheck) {}
+func (noopHealthMonitor) Stop(string)                        {}
+
+// GitProbe reads git status for a repo path. Implemented by
+// runtime.GitAdapter wrapping internal/git.Service.
+type GitProbe interface {
+	Status(ctx context.Context, repoPath string) (GitState, error)
+}
+
+type noopGitProbe struct{}
+
+func (noopGitProbe) Status(context.Context, string) (GitState, error) { return GitState{}, nil }
 
 // DefaultStopTimeout is how long StopService waits for SIGTERM to take
 // effect before escalating to SIGKILL.
@@ -33,6 +63,8 @@ type Manager struct {
 	logs        *logs.Manager
 	publisher   EventPublisher
 	stopTimeout time.Duration
+	health      HealthMonitor
+	git         GitProbe
 
 	mu       sync.RWMutex
 	order    []string
@@ -48,6 +80,8 @@ func NewManager(ws *workspace.Service, runner ProcessRunner, logMgr *logs.Manage
 		logs:        logMgr,
 		publisher:   publisher,
 		stopTimeout: DefaultStopTimeout,
+		health:      noopHealthMonitor{},
+		git:         noopGitProbe{},
 		services:    make(map[string]*serviceRuntime),
 	}
 	for _, svc := range ws.ListServices() {
@@ -55,6 +89,22 @@ func NewManager(ws *workspace.Service, runner ProcessRunner, logMgr *logs.Manage
 		m.order = append(m.order, svc.ID)
 	}
 	return m
+}
+
+// SetHealthMonitor wires in the real health checker (app.go composition
+// root). Must be called before any service starts if health checks should
+// take effect for it.
+func (m *Manager) SetHealthMonitor(hm HealthMonitor) {
+	if hm != nil {
+		m.health = hm
+	}
+}
+
+// SetGitProbe wires in the real git status reader (app.go composition root).
+func (m *Manager) SetGitProbe(gp GitProbe) {
+	if gp != nil {
+		m.git = gp
+	}
 }
 
 func (m *Manager) ListStates() []ServiceState {
@@ -159,6 +209,8 @@ func (m *Manager) StartService(ctx context.Context, id string) error {
 	go m.pipeLog(id, streamKey, "stderr", proc.Stderr)
 	go m.watchExit(sr, proc)
 
+	m.health.Start(id, cfg.HealthChecks)
+
 	return nil
 }
 
@@ -167,6 +219,14 @@ func (m *Manager) StartService(ctx context.Context, id string) error {
 // single place that finalizes exit state, whether the exit was requested
 // (this method) or a crash, so there's exactly one writer for that
 // transition.
+//
+// If there's no in-memory process handle (proc == nil) but the service isn't
+// "stopped" either, this is an orphan adopted by ReconcileOrphans at startup
+// (BETA_PLAN: Setsid'd services survive a devctl backend restart, so a fresh
+// process has no handle for something a previous instance started). There's
+// nothing to send SIGTERM to in that case, so fall back to killing whatever
+// holds the configured port — the same mechanism as the manual force-kill
+// escape hatch.
 func (m *Manager) StopService(ctx context.Context, id string) error {
 	sr, err := m.getRuntime(id)
 	if err != nil {
@@ -180,15 +240,57 @@ func (m *Manager) StopService(ctx context.Context, id string) error {
 	}
 	sr.state.Status = ServiceStopping
 	proc := sr.proc
+	port := sr.config.Port
 	sr.mu.Unlock()
 	m.emit(EventServiceUpdated, id, sr.snapshot())
 
 	if proc == nil {
+		if err := ForceKillPort(port); err != nil {
+			sr.mu.Lock()
+			sr.state.Status = ServiceFailed
+			sr.state.LastError = err.Error()
+			sr.mu.Unlock()
+			m.emit(EventServiceUpdated, id, sr.snapshot())
+			return fmt.Errorf("stop service %q: %w", id, err)
+		}
+		sr.mu.Lock()
+		sr.state.Status = ServiceStopped
+		sr.state.PID = 0
+		sr.mu.Unlock()
+		m.health.Stop(id)
+		m.emit(EventServiceUpdated, id, sr.snapshot())
 		return nil
 	}
 	if err := m.runner.Stop(proc, m.stopTimeout); err != nil {
 		return fmt.Errorf("stop service %q: %w", id, err)
 	}
+	return nil
+}
+
+// ForceKillService kills whatever is listening on the service's configured
+// port regardless of whether this backend instance owns that process — the
+// manual escape hatch for when ReconcileOrphans guesses wrong (BETA_PLAN
+// option 3).
+func (m *Manager) ForceKillService(ctx context.Context, id string) error {
+	sr, err := m.getRuntime(id)
+	if err != nil {
+		return err
+	}
+	sr.mu.RLock()
+	port := sr.config.Port
+	sr.mu.RUnlock()
+
+	if err := ForceKillPort(port); err != nil {
+		return fmt.Errorf("force-kill service %q: %w", id, err)
+	}
+
+	sr.mu.Lock()
+	sr.proc = nil
+	sr.state.Status = ServiceStopped
+	sr.state.PID = 0
+	sr.mu.Unlock()
+	m.health.Stop(id)
+	m.emit(EventServiceUpdated, id, sr.snapshot())
 	return nil
 }
 
@@ -208,6 +310,54 @@ func (m *Manager) RestartService(ctx context.Context, id string) error {
 		return fmt.Errorf("restart service %q: start failed: %w", id, err)
 	}
 	return nil
+}
+
+// dependsOnMap returns each configured service's DependsOn list, keyed by
+// service ID, for topoSortServices.
+func (m *Manager) dependsOnMap() map[string][]string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make(map[string][]string, len(m.services))
+	for id, sr := range m.services {
+		out[id] = sr.config.DependsOn
+	}
+	return out
+}
+
+// StartPreset starts every service in ids in dependency order (T-051). It
+// keeps going on individual failures so one bad service doesn't block the
+// rest of the preset, collecting every error encountered. Already-running
+// services are skipped silently rather than reported as errors.
+func (m *Manager) StartPreset(ctx context.Context, ids []string) []error {
+	order, hadCycle := topoSortServices(ids, m.dependsOnMap())
+	if hadCycle {
+		log.Printf("preset: dependency cycle detected among %v; falling back to config order", ids)
+	}
+
+	var errs []error
+	for _, id := range order {
+		if err := m.StartService(ctx, id); err != nil && !errors.Is(err, ErrServiceAlreadyRunning) {
+			errs = append(errs, err)
+		}
+	}
+	return errs
+}
+
+// StopPreset stops every service in ids in reverse dependency order.
+func (m *Manager) StopPreset(ctx context.Context, ids []string) []error {
+	order, hadCycle := topoSortServices(ids, m.dependsOnMap())
+	if hadCycle {
+		log.Printf("preset: dependency cycle detected among %v; falling back to config order", ids)
+	}
+
+	var errs []error
+	for i := len(order) - 1; i >= 0; i-- {
+		id := order[i]
+		if err := m.StopService(ctx, id); err != nil && !errors.Is(err, ErrServiceNotRunning) {
+			errs = append(errs, err)
+		}
+	}
+	return errs
 }
 
 func (m *Manager) pipeLog(serviceID, streamKey, source string, r io.Reader) {
@@ -244,5 +394,184 @@ func (m *Manager) watchExit(sr *serviceRuntime, proc *RunningProcess) {
 	}
 	id := sr.config.ID
 	sr.mu.Unlock()
+	m.health.Stop(id)
 	m.emit(EventServiceUpdated, id, sr.snapshot())
+}
+
+// SetServiceHealth records a new health status for id and emits
+// health.updated. Called back by the HealthMonitor implementation whenever a
+// probe result changes.
+func (m *Manager) SetServiceHealth(id string, status string) {
+	sr, err := m.getRuntime(id)
+	if err != nil {
+		return
+	}
+	sr.mu.Lock()
+	sr.state.Health.Status = status
+	health := sr.state.Health
+	sr.mu.Unlock()
+	m.emit(EventHealthUpdated, id, HealthUpdatedPayload{Health: health})
+}
+
+// RefreshGitState re-reads git status for id's repo path and stores it,
+// emitting health.updated's sibling event git.updated. Called once per
+// service at startup and explicitly after any git action completes (T-058) —
+// never polled.
+func (m *Manager) RefreshGitState(ctx context.Context, id string) (GitState, error) {
+	sr, err := m.getRuntime(id)
+	if err != nil {
+		return GitState{}, err
+	}
+	sr.mu.RLock()
+	path := sr.config.Path
+	sr.mu.RUnlock()
+
+	state, err := m.git.Status(ctx, path)
+	if err != nil {
+		return GitState{}, fmt.Errorf("refresh git state %q: %w", id, err)
+	}
+
+	sr.mu.Lock()
+	sr.state.Git = state
+	sr.mu.Unlock()
+	m.emit(EventGitUpdated, id, GitUpdatedPayload{Git: state})
+	return state, nil
+}
+
+// RefreshAllGitStates refreshes git status for every configured service
+// concurrently. Intended for a one-time call at startup (T-058 "on service
+// load"); errors are logged, not returned, since one repo's git failure
+// shouldn't block the rest.
+func (m *Manager) RefreshAllGitStates(ctx context.Context) {
+	m.mu.RLock()
+	ids := append([]string(nil), m.order...)
+	m.mu.RUnlock()
+
+	var wg sync.WaitGroup
+	for _, id := range ids {
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			if _, err := m.RefreshGitState(ctx, id); err != nil {
+				log.Printf("git: initial refresh for %q: %v", id, err)
+			}
+		}(id)
+	}
+	wg.Wait()
+}
+
+// StartWorker starts the configured process for a worker attached to a
+// service. Workers are independently controllable from their parent service
+// (ARCHITECTURE.md §12.2).
+func (m *Manager) StartWorker(ctx context.Context, serviceID, workerID string) error {
+	sr, err := m.getRuntime(serviceID)
+	if err != nil {
+		return err
+	}
+	wr, ok := sr.getWorker(workerID)
+	if !ok {
+		return fmt.Errorf("%w: %s/%s", ErrWorkerNotFound, serviceID, workerID)
+	}
+
+	wr.mu.Lock()
+	if wr.state.Status == WorkerRunning || wr.state.Status == WorkerStarting {
+		wr.mu.Unlock()
+		return fmt.Errorf("%w: %s/%s", ErrWorkerAlreadyRunning, serviceID, workerID)
+	}
+	wr.state.Status = WorkerStarting
+	wr.state.LastError = ""
+	wr.state.LastExitCode = nil
+	cfg := wr.config
+	wr.mu.Unlock()
+	m.emitWorker(serviceID, wr)
+
+	sr.mu.RLock()
+	svcPath := sr.config.Path
+	sr.mu.RUnlock()
+
+	proc, err := m.runner.Start(ctx, ProcessOptions{
+		ID:      serviceID + ":" + cfg.ID,
+		Command: cfg.StartCommand,
+		Dir:     svcPath,
+		Env:     cfg.Env,
+	})
+	if err != nil {
+		wr.mu.Lock()
+		wr.state.Status = WorkerFailed
+		wr.state.LastError = err.Error()
+		wr.mu.Unlock()
+		m.emitWorker(serviceID, wr)
+		return fmt.Errorf("start worker %q: %w", cfg.ID, err)
+	}
+
+	wr.mu.Lock()
+	wr.proc = proc
+	wr.state.Status = WorkerRunning
+	wr.state.PID = proc.PID
+	wr.mu.Unlock()
+	m.emitWorker(serviceID, wr)
+
+	streamKey := logs.WorkerStreamKey(serviceID, workerID)
+	go m.pipeLog(serviceID, streamKey, "stdout", proc.Stdout)
+	go m.pipeLog(serviceID, streamKey, "stderr", proc.Stderr)
+	go m.watchWorkerExit(serviceID, wr, proc)
+
+	return nil
+}
+
+// StopWorker signals a running worker process and waits for it to exit.
+func (m *Manager) StopWorker(ctx context.Context, serviceID, workerID string) error {
+	sr, err := m.getRuntime(serviceID)
+	if err != nil {
+		return err
+	}
+	wr, ok := sr.getWorker(workerID)
+	if !ok {
+		return fmt.Errorf("%w: %s/%s", ErrWorkerNotFound, serviceID, workerID)
+	}
+
+	wr.mu.Lock()
+	if wr.state.Status == WorkerStopped {
+		wr.mu.Unlock()
+		return fmt.Errorf("%w: %s/%s", ErrWorkerNotRunning, serviceID, workerID)
+	}
+	proc := wr.proc
+	wr.mu.Unlock()
+
+	if proc == nil {
+		return nil
+	}
+	if err := m.runner.Stop(proc, m.stopTimeout); err != nil {
+		return fmt.Errorf("stop worker %q: %w", workerID, err)
+	}
+	return nil
+}
+
+// watchWorkerExit is the single writer for a worker's "process has exited"
+// transition, mirroring watchExit for services.
+func (m *Manager) watchWorkerExit(serviceID string, wr *workerRuntime, proc *RunningProcess) {
+	<-proc.Done()
+
+	wr.mu.Lock()
+	if wr.proc != proc {
+		wr.mu.Unlock()
+		return
+	}
+	exitCode := proc.ExitCode()
+	wr.state.PID = 0
+	wr.state.LastExitCode = &exitCode
+	if exitCode == 0 {
+		wr.state.Status = WorkerStopped
+	} else {
+		wr.state.Status = WorkerFailed
+		if err := proc.ExitErr(); err != nil {
+			wr.state.LastError = err.Error()
+		}
+	}
+	wr.mu.Unlock()
+	m.emitWorker(serviceID, wr)
+}
+
+func (m *Manager) emitWorker(serviceID string, wr *workerRuntime) {
+	m.emit(EventWorkerUpdated, serviceID, WorkerUpdatedPayload{Worker: wr.snapshot()})
 }

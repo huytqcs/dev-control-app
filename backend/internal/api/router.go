@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 
+	"devctl/internal/git"
 	"devctl/internal/logs"
 	"devctl/internal/runtime"
 	"devctl/internal/workspace"
@@ -17,6 +18,7 @@ type Handlers struct {
 	Workspace *workspace.Service
 	Runtime   *runtime.Manager
 	Logs      *logs.Manager
+	Git       *git.Service
 	Hub       *Hub
 }
 
@@ -35,6 +37,11 @@ func NewRouter(h *Handlers) *chi.Mux {
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/workspace", h.GetWorkspace)
 
+		r.Route("/presets/{presetID}", func(r chi.Router) {
+			r.Post("/start", h.StartPreset)
+			r.Post("/stop", h.StopPreset)
+		})
+
 		r.Route("/services", func(r chi.Router) {
 			r.Get("/", h.ListServices)
 
@@ -44,6 +51,19 @@ func NewRouter(h *Handlers) *chi.Mux {
 				r.Post("/start", h.StartService)
 				r.Post("/stop", h.StopService)
 				r.Post("/restart", h.RestartService)
+				r.Post("/force-kill", h.ForceKillService)
+
+				r.Route("/git", func(r chi.Router) {
+					r.Post("/fetch", h.GitFetch)
+					r.Post("/pull", h.GitPull)
+					r.Post("/push", h.GitPush)
+					r.Post("/checkout", h.GitCheckout)
+				})
+
+				r.Route("/workers/{workerID}", func(r chi.Router) {
+					r.Post("/start", h.StartWorker)
+					r.Post("/stop", h.StopWorker)
+				})
 			})
 		})
 	})

@@ -55,6 +55,15 @@ func (h *Handlers) RestartService(w http.ResponseWriter, r *http.Request) {
 	h.writeServiceState(w, id)
 }
 
+func (h *Handlers) ForceKillService(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "serviceID")
+	if err := h.Runtime.ForceKillService(r.Context(), id); err != nil {
+		h.writeRuntimeError(w, err)
+		return
+	}
+	h.writeServiceState(w, id)
+}
+
 func (h *Handlers) writeServiceState(w http.ResponseWriter, id string) {
 	cfg, ok := h.Workspace.GetService(id)
 	if !ok {

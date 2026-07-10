@@ -1,12 +1,19 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { LogViewer } from "@/components/logs/LogViewer";
 import { EmptyState } from "@/components/common/EmptyState";
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { HealthBadge } from "@/components/health/HealthBadge";
+import { GitPanel } from "@/components/git/GitPanel";
+import { WorkerControls } from "@/components/workspace/WorkerControls";
+import { forceKillService } from "@/lib/api";
+import { servicesQueryKey } from "@/hooks/useServicesQuery";
 import type { ServiceDTO } from "@/types/api";
 
 export function ServiceDetailsPanel({
@@ -14,6 +21,15 @@ export function ServiceDetailsPanel({
 }: {
   service: ServiceDTO | undefined;
 }) {
+  const queryClient = useQueryClient();
+  const forceKill = useMutation({
+    mutationFn: () => forceKillService(service!.id),
+    onSuccess: (updated) =>
+      queryClient.setQueryData<ServiceDTO[]>(servicesQueryKey, (prev) =>
+        prev?.map((s) => (s.id === updated.id ? updated : s)),
+      ),
+  });
+
   if (!service) {
     return (
       <div className="flex h-full min-w-0 flex-col border-l">
@@ -34,17 +50,30 @@ export function ServiceDetailsPanel({
             {service.path}
           </div>
         </div>
-        <StatusBadge status={service.state.status} />
+        <div className="flex items-center gap-1.5">
+          <HealthBadge status={service.state.health.status} />
+          <StatusBadge status={service.state.status} />
+        </div>
       </div>
 
       <Tabs defaultValue="logs" className="flex min-h-0 flex-1 flex-col">
         <TabsList className="mx-3 mt-2 self-start">
           <TabsTrigger value="logs">Logs</TabsTrigger>
+          <TabsTrigger value="git">Git</TabsTrigger>
+          <TabsTrigger value="workers">Workers</TabsTrigger>
           <TabsTrigger value="info">Info</TabsTrigger>
         </TabsList>
 
         <TabsContent value="logs" className="flex min-h-0 flex-1 flex-col">
           <LogViewer serviceId={service.id} />
+        </TabsContent>
+
+        <TabsContent value="git" className="min-h-0 flex-1 overflow-y-auto">
+          <GitPanel service={service} />
+        </TabsContent>
+
+        <TabsContent value="workers" className="min-h-0 flex-1 overflow-y-auto p-4">
+          <WorkerControls service={service} />
         </TabsContent>
 
         <TabsContent value="info" className="min-h-0 flex-1 overflow-y-auto p-4 text-sm">
@@ -64,6 +93,27 @@ export function ServiceDetailsPanel({
             <dt className="text-muted-foreground">Last exit code</dt>
             <dd>{service.state.lastExitCode ?? "—"}</dd>
           </dl>
+
+          <div className="mt-6 border-t pt-4">
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={forceKill.isPending}
+              onClick={() => forceKill.mutate()}
+            >
+              Force kill
+            </Button>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Kills whatever is listening on port {service.port || "—"},
+              regardless of whether devctl started it. Use this if a service
+              survived a devctl restart and shows the wrong state.
+            </p>
+            {forceKill.isError ? (
+              <p className="mt-1 text-xs text-destructive">
+                {(forceKill.error as Error).message}
+              </p>
+            ) : null}
+          </div>
         </TabsContent>
       </Tabs>
     </div>

@@ -11,6 +11,9 @@ type EventType string
 const (
 	EventServiceUpdated EventType = "service.updated"
 	EventLogAppended    EventType = "log.appended"
+	EventHealthUpdated  EventType = "health.updated"
+	EventGitUpdated     EventType = "git.updated"
+	EventWorkerUpdated  EventType = "worker.updated"
 )
 
 type AppEvent struct {
@@ -22,6 +25,18 @@ type AppEvent struct {
 
 type LogAppendedPayload struct {
 	Entry logs.LogEntry `json:"entry"`
+}
+
+type HealthUpdatedPayload struct {
+	Health HealthState `json:"health"`
+}
+
+type GitUpdatedPayload struct {
+	Git GitState `json:"git"`
+}
+
+type WorkerUpdatedPayload struct {
+	Worker WorkerState `json:"worker"`
 }
 
 // EventPublisher receives runtime events for fan-out (e.g. to WebSocket

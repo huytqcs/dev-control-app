@@ -1,6 +1,13 @@
-import type { ServiceDTO } from "@/types/api";
+import { PresetBar } from "@/components/workspace/PresetBar";
+import type { PresetDTO, ServiceDTO } from "@/types/api";
 
-export function TopBar({ services }: { services: ServiceDTO[] }) {
+export function TopBar({
+  services,
+  presets,
+}: {
+  services: ServiceDTO[];
+  presets: PresetDTO[];
+}) {
   const running = services.filter((s) => s.state.status === "running").length;
   const failed = services.filter((s) => s.state.status === "failed").length;
 
@@ -19,6 +26,9 @@ export function TopBar({ services }: { services: ServiceDTO[] }) {
         <span>
           Total <span className="font-medium text-foreground">{services.length}</span>
         </span>
+      </div>
+      <div className="ml-auto">
+        <PresetBar presets={presets} />
       </div>
     </header>
   );

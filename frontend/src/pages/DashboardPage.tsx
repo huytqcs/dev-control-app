@@ -19,7 +19,11 @@ export function DashboardPage() {
   const selectedService = services.find((s) => s.id === selectedId);
 
   return (
-    <AppShell workspaceName={workspaceQuery.data?.name} services={services}>
+    <AppShell
+      workspaceName={workspaceQuery.data?.name}
+      services={services}
+      presets={workspaceQuery.data?.presets ?? []}
+    >
       {servicesQuery.isLoading ? (
         <LoadingState label="Loading services…" />
       ) : servicesQuery.isError ? (

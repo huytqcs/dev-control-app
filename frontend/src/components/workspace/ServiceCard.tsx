@@ -6,6 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { HealthBadge } from "@/components/health/HealthBadge";
 import { cn } from "@/lib/utils";
 import type { ServiceDTO } from "@/types/api";
 
@@ -39,7 +40,10 @@ export function ServiceCard({
     >
       <CardHeader className="flex-row items-center justify-between">
         <CardTitle>{service.name}</CardTitle>
-        <StatusBadge status={status} />
+        <div className="flex items-center gap-1.5">
+          <HealthBadge status={service.state.health.status} />
+          <StatusBadge status={status} />
+        </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="flex items-center gap-3 text-xs text-muted-foreground">

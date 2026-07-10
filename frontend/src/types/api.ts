@@ -8,10 +8,14 @@ export type ServiceStatus =
 export interface GitStateDTO {
   branch: string;
   dirty: boolean;
+  ahead: number;
+  behind: number;
 }
 
+export type HealthStatus = "unknown" | "healthy" | "unhealthy";
+
 export interface HealthStateDTO {
-  status: string;
+  status: HealthStatus;
 }
 
 export interface ServiceStateDTO {
@@ -33,6 +37,9 @@ export interface WorkerSummaryDTO {
   id: string;
   name: string;
   status: string;
+  pid?: number;
+  lastError?: string;
+  lastExitCode?: number;
 }
 
 export interface ServiceDTO {
@@ -109,4 +116,30 @@ export interface LogAppendedEvent {
   time: string;
 }
 
-export type AppEvent = ServiceUpdatedEvent | LogAppendedEvent;
+export interface HealthUpdatedEvent {
+  type: "health.updated";
+  serviceId: string;
+  payload: { health: HealthStateDTO };
+  time: string;
+}
+
+export interface GitUpdatedEvent {
+  type: "git.updated";
+  serviceId: string;
+  payload: { git: GitStateDTO };
+  time: string;
+}
+
+export interface WorkerUpdatedEvent {
+  type: "worker.updated";
+  serviceId: string;
+  payload: { worker: WorkerSummaryDTO };
+  time: string;
+}
+
+export type AppEvent =
+  | ServiceUpdatedEvent
+  | LogAppendedEvent
+  | HealthUpdatedEvent
+  | GitUpdatedEvent
+  | WorkerUpdatedEvent;

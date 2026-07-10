@@ -30,13 +30,12 @@ type WorkerState struct {
 	LastExitCode *int         `json:"lastExitCode,omitempty"`
 }
 
-// GitState and HealthState are alpha stubs. The git/health modules land in
-// beta and populate these for real; until then every ServiceState reports an
-// empty branch and "unknown" health so the API response shape doesn't change
-// out from under the frontend later.
+// GitState is populated by internal/git via the runtime.GitProbe interface.
 type GitState struct {
 	Branch string `json:"branch"`
 	Dirty  bool   `json:"dirty"`
+	Ahead  int    `json:"ahead"`
+	Behind int    `json:"behind"`
 }
 
 type HealthState struct {
