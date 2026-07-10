@@ -1,0 +1,140 @@
+name: mealsuite
+
+presets:
+  - id: core
+    name: Core
+    services:
+      - core-be
+      - core-app
+      - touch-be
+
+  - id: touch
+    name: Touch
+    services:
+      - touch-be
+      - touch-app
+      
+services:
+  - id: core-be
+    name: Core BE
+    type: rails
+    path: /Users/harryta/Desktop/code/core-be
+    startCommand: ["bundle", "exec", "rails", "s", "-p", "3000"]
+    env:
+      RAILS_ENV: development
+    port: 3000
+    openUrls:
+      - http://localhost:3000
+    dependsOn: []
+    healthChecks:
+      - type: tcp
+        port: 3000
+        interval: 3
+        timeout: 2
+    workers:
+      - id: sidekiq
+        name: Sidekiq
+        startCommand: ["bundle", "exec", "sidekiq"]
+        env:
+          RAILS_ENV: development
+    actions:
+      - id: migrate
+        name: DB Migrate
+        description: Run database migrations
+        command: ["bundle", "exec", "rails", "db:migrate"]
+      - id: console
+        name: Rails Console
+        description: Open Rails console in terminal
+        command: ["bundle", "exec", "rails", "console"]
+    tags:
+      - rails
+      - backend
+
+  - id: core-app
+    name: Core App
+    type: frontend
+    path: /Users/harryta/Desktop/code/core-app
+    startCommand: ["npm", "run", "local"]
+    env:
+      NODE_ENV: development
+    port: 8080
+    openUrls:
+      - http://localhost:8080
+    dependsOn:
+      - core-be
+    healthChecks:
+      - type: tcp
+        port: 8080
+        interval: 3
+        timeout: 2
+    workers: []
+    actions:
+      - id: install
+        name: Install deps
+        description: Install npm dependencies
+        command: ["npm", "install"]
+      - id: test
+        name: Run tests
+        description: Run frontend tests
+        command: ["npm", "test"]
+    tags:
+      - react
+      - frontend
+
+  - id: touch-be
+    name: Touch BE
+    type: rails
+    path: /Users/harryta/Desktop/code/touch-be
+    startCommand: ["bundle", "exec", "rails", "s", "-p", "3001"]
+    env:
+      RAILS_ENV: development
+    port: 3001
+    openUrls:
+      - http://localhost:3001
+    dependsOn: []
+    healthChecks:
+      - type: tcp
+        port: 3001
+        interval: 3
+        timeout: 2
+    workers:
+      - id: sidekiq
+        name: Sidekiq
+        startCommand: ["bundle", "exec", "sidekiq"]
+        env:
+          RAILS_ENV: development
+    actions:
+      - id: migrate
+        name: DB Migrate
+        description: Run database migrations
+        command: ["bundle", "exec", "rails", "db:migrate"]
+    tags:
+      - rails
+      - backend
+
+  - id: touch-app
+    name: Touch App
+    type: frontend
+    path: /Users/harryta/Desktop/code/touch-app
+    startCommand: ["npm", "run", "local"]
+    env:
+      NODE_ENV: development
+    port: 8081
+    openUrls:
+      - http://localhost:8081
+    dependsOn:
+      - touch-be
+    healthChecks:
+      - type: tcp
+        port: 8081
+        interval: 3
+        timeout: 2
+    workers: []
+    actions:
+      - id: install
+        name: Install deps
+        description: Install npm dependencies
+        command: ["npm", "install"]
+    tags:
+      - angular
+      - frontend

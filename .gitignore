@@ -1,0 +1,12 @@
+# OS
+.DS_Store
+
+# Backend
+backend/devctl.yaml
+backend/devctl
+backend/*.log
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
