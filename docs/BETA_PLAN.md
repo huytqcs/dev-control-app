@@ -185,3 +185,23 @@ Not in the original T-060 → T-063 breakdown, added after a direct ask
   for most real long-running commands) was misreported as `failed` instead
   of `stopped`, for *any* worker stop, not just autoStart ones. Fixed by
   giving workers the same stopping-state guard services already had.
+
+---
+
+## Beyond original scope: searchable branch checkout
+
+T-059's `BranchCheckoutForm.tsx` originally took free-text branch input.
+Following a direct ask ("show list branch then can search"), it's now a
+live-filtered picker instead:
+
+- `git.Service.ListBranches` (`internal/git/service.go`) — local branches
+  plus remote-tracking branches' short names, deduplicated and sorted, via
+  `git for-each-ref`. A remote-only name still works with `Checkout` since
+  `git checkout <name>` auto-creates a local tracking branch for it (git's
+  own DWIM behavior).
+- `GET /api/services/:id/git/branches` (SPEC.md §19.6).
+- `BranchCheckoutForm` filters client-side as you type, caps to 8 visible
+  matches, marks the current branch disabled. Verified against a real repo
+  with ~8,000 branches — filtering stayed instant.
+- `GitPanel` invalidates the branch list after Fetch/Pull, since either can
+  surface remote branches that didn't exist locally before.

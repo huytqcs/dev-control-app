@@ -1033,6 +1033,16 @@ Manual escape hatch for orphan reconciliation (§26.1) guessing wrong.
 
 # 19.6 Git endpoints
 
+## `GET /api/services/:id/git/branches`
+Return every local branch plus every remote-tracking branch's short name
+(deduplicated, sorted) — the list a branch-search checkout UI filters
+client-side.
+
+### Response
+```json
+{ "branches": ["feature-a", "feature-b", "main"] }
+```
+
 ## `POST /api/services/:id/git/fetch`
 ## `POST /api/services/:id/git/pull`
 ## `POST /api/services/:id/git/push`
