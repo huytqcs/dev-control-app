@@ -13,6 +13,15 @@ export function useRealtimeEvents() {
   useEffect(() => {
     realtimeClient.connect();
 
+    // Anything broadcast while disconnected (a dropped WS, a server-side
+    // buffer overflow during a burst of events, a backgrounded tab) is
+    // gone for good — there's no missed-event replay. Force a full resync
+    // the moment the socket comes back instead of waiting on the slow
+    // background poll to eventually notice.
+    const unsubscribeReconnect = realtimeClient.onReconnect(() => {
+      queryClient.invalidateQueries({ queryKey: servicesQueryKey });
+    });
+
     const unsubscribe = realtimeClient.subscribe((event) => {
       queryClient.setQueryData<ServiceDTO[]>(servicesQueryKey, (prev) => {
         if (!prev) return prev;
@@ -67,6 +76,9 @@ export function useRealtimeEvents() {
       });
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      unsubscribeReconnect();
+    };
   }, [queryClient]);
 }

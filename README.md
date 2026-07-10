@@ -2,8 +2,6 @@
 
 A local developer control center for managing multiple dev projects from one place: start/stop/restart services, stream live logs, run git actions, presets, and workers — all from a single dashboard instead of juggling tmux panes.
 
-Rebuild of an earlier `appctl2.py` (Textual/tmux) tool, with a cleaner architecture:
-
 - **Backend:** Go — owns process lifecycle, log capture, and state directly (no tmux)
 - **Frontend:** React + TypeScript + Vite + Tailwind + shadcn/ui
 - **Transport:** HTTP for commands/snapshots, WebSocket for live updates

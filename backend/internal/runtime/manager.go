@@ -20,6 +20,8 @@ var (
 	ErrServiceNotFound       = errors.New("service not found")
 	ErrServiceAlreadyRunning = errors.New("service already running")
 	ErrServiceNotRunning     = errors.New("service not running")
+	ErrServiceStarting       = errors.New("service is still starting")
+	ErrServiceStopping       = errors.New("service is still stopping")
 
 	ErrWorkerNotFound       = errors.New("worker not found")
 	ErrWorkerAlreadyRunning = errors.New("worker already running")
@@ -159,6 +161,18 @@ func (m *Manager) StartService(ctx context.Context, id string) error {
 		sr.mu.Unlock()
 		return fmt.Errorf("%w: %s", ErrServiceAlreadyRunning, id)
 	}
+	// The symmetric case of StopService's ErrServiceStarting guard: a Stop
+	// already in flight (still in its SIGTERM-grace teardown, which can take
+	// up to stopTimeout) hasn't reaped the old process yet. Starting a new
+	// one now would race it onto the same port while the old one is still
+	// dying, and health.Monitor.Start's per-serviceID no-op guard means the
+	// new process wouldn't even get its own health monitor — it'd silently
+	// inherit whatever the dying old monitor reports until that one gets
+	// torn down. Reject instead; the caller can retry once actually stopped.
+	if sr.state.Status == ServiceStopping {
+		sr.mu.Unlock()
+		return fmt.Errorf("%w: %s", ErrServiceStopping, id)
+	}
 	sr.state.Status = ServiceStarting
 	sr.state.LastError = ""
 	sr.state.LastExitCode = nil
@@ -268,6 +282,19 @@ func (m *Manager) StopService(ctx context.Context, id string) error {
 	if sr.state.Status == ServiceStopped {
 		sr.mu.Unlock()
 		return fmt.Errorf("%w: %s", ErrServiceNotRunning, id)
+	}
+	// StartService hasn't recorded sr.proc yet even though the real process
+	// may already be alive — treating a nil proc as "orphan, force-kill the
+	// port" here (as below) would race: ForceKillPort finds nothing
+	// listening yet, reports success, and this call claims "stopped" right
+	// before the in-flight Start overwrites status back to "running" a
+	// moment later. That's a real bug a quick double-click on Start/Stop
+	// reliably triggers — the caller is told the service stopped when it
+	// silently didn't. Reject instead of racing; the caller (or user) can
+	// just retry once the service has actually finished starting.
+	if sr.state.Status == ServiceStarting {
+		sr.mu.Unlock()
+		return fmt.Errorf("%w: %s", ErrServiceStarting, id)
 	}
 	sr.state.Status = ServiceStopping
 	proc := sr.proc

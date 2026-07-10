@@ -41,7 +41,12 @@ func (hub *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := &wsClient{conn: conn, send: make(chan []byte, 64)}
+	// 256, not 64: a single SIGTERM'd Ruby process with the `debug` gem
+	// loaded can dump 60+ log.appended lines in under a millisecond (a real
+	// backtrace-on-signal dump seen in practice) — a multi-service preset
+	// stop can burst several of those concurrently, well past a tight
+	// buffer.
+	client := &wsClient{conn: conn, send: make(chan []byte, 256)}
 	hub.register(client)
 
 	go hub.writePump(client)
@@ -88,8 +93,12 @@ func (hub *Hub) writePump(c *wsClient) {
 }
 
 // Broadcast sends data to every connected client without blocking the
-// caller; a client whose send buffer is full is dropped rather than stalling
-// the runtime manager on a slow reader.
+// caller. A client whose send buffer is momentarily full has this one
+// message dropped, not the whole connection — closing the socket over a
+// transient burst (a log-heavy service stop, say) loses every event for the
+// ~1.5s reconnect window, not just this one, and there's nothing that
+// resyncs full state on reconnect to make up for it. A single dropped log
+// line is a much smaller loss than that.
 func (hub *Hub) Broadcast(data []byte) {
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
@@ -97,8 +106,7 @@ func (hub *Hub) Broadcast(data []byte) {
 		select {
 		case c.send <- data:
 		default:
-			delete(hub.clients, c)
-			close(c.send)
+			applog.Error("ws", "client send buffer full, dropping one event")
 		}
 	}
 }

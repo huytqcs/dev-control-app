@@ -53,13 +53,20 @@ func probeOne(ctx context.Context, c config.HealthCheck) bool {
 	}
 }
 
-// ProbeTCP reports whether something accepts connections on 127.0.0.1:port.
+// ProbeTCP reports whether something accepts connections on localhost:port.
+// Dials the "localhost" hostname rather than the literal 127.0.0.1 — some
+// dev servers (Node 17+'s default DNS resolution order under things like
+// `ng serve`/webpack-dev-server) bind only the IPv6 loopback (::1), not the
+// IPv4 one. A literal 127.0.0.1 dial would get connection-refused against a
+// server like that even though it's genuinely up and reachable in a
+// browser (which resolves "localhost" the same dual-stack way). Dialing the
+// hostname lets net.Dialer's built-in Happy-Eyeballs fallback try both.
 func ProbeTCP(ctx context.Context, port int, timeout time.Duration) bool {
 	if port <= 0 {
 		return false
 	}
 	d := net.Dialer{Timeout: timeout}
-	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
 	if err != nil {
 		return false
 	}

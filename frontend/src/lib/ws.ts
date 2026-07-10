@@ -18,11 +18,23 @@ class RealtimeClient {
   private socket: WebSocket | null = null;
   private connecting = false;
   private listeners = new Set<Listener>();
+  private reconnectListeners = new Set<() => void>();
+  private everConnected = false;
 
   connect() {
     if (this.socket || this.connecting) return;
     this.connecting = true;
     this.open();
+  }
+
+  // Fires on every successful (re)connect after the first. Anything missed
+  // while disconnected (a dropped connection, buffer overflow on the
+  // server, a backgrounded tab) has no other way to get corrected short of
+  // waiting for a slow background poll — resync on reconnect closes that
+  // gap immediately instead.
+  onReconnect(listener: () => void): () => void {
+    this.reconnectListeners.add(listener);
+    return () => this.reconnectListeners.delete(listener);
   }
 
   private open() {
@@ -32,6 +44,10 @@ class RealtimeClient {
 
     socket.addEventListener("open", () => {
       this.connecting = false;
+      if (this.everConnected) {
+        this.reconnectListeners.forEach((listener) => listener());
+      }
+      this.everConnected = true;
     });
 
     socket.addEventListener("message", (ev) => {

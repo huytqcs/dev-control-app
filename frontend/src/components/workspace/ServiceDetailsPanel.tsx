@@ -91,7 +91,7 @@ export function ServiceDetailsPanel({
           >
             Terminal
           </Button>
-          <HealthBadge status={service.state.health.status} />
+          <HealthBadge status={service.state.health.status} serviceStatus={service.state.status} />
           <StatusBadge status={service.state.status} />
         </div>
       </div>

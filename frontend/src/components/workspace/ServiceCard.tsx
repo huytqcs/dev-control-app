@@ -43,7 +43,7 @@ export function ServiceCard({
       <CardHeader className="flex-row items-center justify-between">
         <CardTitle>{service.name}</CardTitle>
         <div className="flex items-center gap-1.5">
-          <HealthBadge status={service.state.health.status} />
+          <HealthBadge status={service.state.health.status} serviceStatus={status} />
           <StatusBadge status={status} />
         </div>
       </CardHeader>
