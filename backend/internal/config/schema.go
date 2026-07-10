@@ -29,6 +29,12 @@ type WorkerConfig struct {
 	Name         string            `yaml:"name"`
 	StartCommand []string          `yaml:"startCommand"`
 	Env          map[string]string `yaml:"env"`
+	// AutoStart, when true, starts this worker whenever its parent service
+	// starts (and stops it whenever the service stops or crashes) — e.g. a
+	// Sidekiq worker that should always run alongside its Rails server.
+	// Default false: workers are independently controllable
+	// (ARCHITECTURE.md §12.2) unless opted into this.
+	AutoStart bool `yaml:"autoStart"`
 }
 
 type PresetConfig struct {

@@ -64,12 +64,18 @@ type WorkerSummaryDTO struct {
 	PID          int    `json:"pid,omitempty"`
 	LastError    string `json:"lastError,omitempty"`
 	LastExitCode *int   `json:"lastExitCode,omitempty"`
+	AutoStart    bool   `json:"autoStart"`
 }
 
 func toServiceDTO(cfg config.ServiceConfig, state runtime.ServiceState) ServiceDTO {
 	actions := make([]ActionSummaryDTO, 0, len(cfg.Actions))
 	for _, a := range cfg.Actions {
 		actions = append(actions, ActionSummaryDTO{ID: a.ID, Name: a.Name})
+	}
+
+	autoStartByID := make(map[string]bool, len(cfg.Workers))
+	for _, w := range cfg.Workers {
+		autoStartByID[w.ID] = w.AutoStart
 	}
 
 	workers := make([]WorkerSummaryDTO, 0, len(state.Workers))
@@ -81,6 +87,7 @@ func toServiceDTO(cfg config.ServiceConfig, state runtime.ServiceState) ServiceD
 			PID:          w.PID,
 			LastError:    w.LastError,
 			LastExitCode: w.LastExitCode,
+			AutoStart:    autoStartByID[w.ID],
 		})
 	}
 

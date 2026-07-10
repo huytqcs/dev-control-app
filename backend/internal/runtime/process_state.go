@@ -19,6 +19,7 @@ const (
 	WorkerStarting WorkerStatus = "starting"
 	WorkerRunning  WorkerStatus = "running"
 	WorkerFailed   WorkerStatus = "failed"
+	WorkerStopping WorkerStatus = "stopping"
 )
 
 type WorkerState struct {

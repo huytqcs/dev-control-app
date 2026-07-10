@@ -40,6 +40,7 @@ export interface WorkerSummaryDTO {
   pid?: number;
   lastError?: string;
   lastExitCode?: number;
+  autoStart: boolean;
 }
 
 export interface ServiceDTO {

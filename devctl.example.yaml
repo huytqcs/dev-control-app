@@ -37,6 +37,10 @@ services:
         startCommand: ["bundle", "exec", "sidekiq"]
         env:
           RAILS_ENV: development
+        # autoStart: starts this worker whenever core-be starts, and stops it
+        # whenever core-be stops or crashes. Omit (or set false) to control it
+        # independently from the Workers tab instead.
+        autoStart: true
     actions:
       - id: migrate
         name: DB Migrate
@@ -103,6 +107,10 @@ services:
         startCommand: ["bundle", "exec", "sidekiq"]
         env:
           RAILS_ENV: development
+        # autoStart: starts this worker whenever core-be starts, and stops it
+        # whenever core-be stops or crashes. Omit (or set false) to control it
+        # independently from the Workers tab instead.
+        autoStart: true
     actions:
       - id: migrate
         name: DB Migrate

@@ -31,6 +31,19 @@ func tickingService(id string) config.ServiceConfig {
 	}
 }
 
+func tickingServiceWithAutoWorker(id, workerID string) config.ServiceConfig {
+	svc := tickingService(id)
+	svc.Workers = []config.WorkerConfig{
+		{
+			ID:           workerID,
+			Name:         workerID,
+			StartCommand: []string{"sh", "-c", `trap 'exit 0' TERM; while true; do echo tick; sleep 0.05; done`},
+			AutoStart:    true,
+		},
+	}
+	return svc
+}
+
 func crashingService(id string, code int) config.ServiceConfig {
 	return config.ServiceConfig{
 		ID:           id,
@@ -171,4 +184,40 @@ func TestManager_RestartService(t *testing.T) {
 	})
 
 	t.Cleanup(func() { _ = m.StopService(ctx, "svc") })
+}
+
+func TestManager_AutoStartWorker_StartsAndStopsWithService(t *testing.T) {
+	m, _ := testManager(t, tickingServiceWithAutoWorker("svc", "worker"))
+	ctx := context.Background()
+
+	if err := m.StartService(ctx, "svc"); err != nil {
+		t.Fatalf("StartService: %v", err)
+	}
+
+	pollUntil(t, 2*time.Second, func() bool {
+		s, _ := m.GetState("svc")
+		for _, w := range s.Workers {
+			if w.ID == "worker" && w.Status == WorkerRunning {
+				return true
+			}
+		}
+		return false
+	})
+
+	if err := m.StopService(ctx, "svc"); err != nil {
+		t.Fatalf("StopService: %v", err)
+	}
+
+	pollUntil(t, 3*time.Second, func() bool {
+		s, _ := m.GetState("svc")
+		if s.Status != ServiceStopped {
+			return false
+		}
+		for _, w := range s.Workers {
+			if w.ID == "worker" && w.Status != WorkerStopped {
+				return false
+			}
+		}
+		return true
+	})
 }

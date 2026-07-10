@@ -56,6 +56,11 @@ export function WorkerControls({ service }: { service: ServiceDTO }) {
               />
               <span className="text-sm font-medium">{worker.name}</span>
               <Badge variant="outline">{worker.status}</Badge>
+              {worker.autoStart ? (
+                <Badge variant="outline" title="Starts and stops with this service">
+                  Auto
+                </Badge>
+              ) : null}
             </div>
             <Button
               size="sm"

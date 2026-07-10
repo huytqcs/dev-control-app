@@ -210,8 +210,39 @@ func (m *Manager) StartService(ctx context.Context, id string) error {
 	go m.watchExit(sr, proc)
 
 	m.health.Start(id, cfg.HealthChecks)
+	m.startAutoWorkers(ctx, id, cfg)
 
 	return nil
+}
+
+// startAutoWorkers starts every worker configured with autoStart: true
+// (e.g. Sidekiq alongside its Rails server). Failures are logged, not
+// returned — one misconfigured worker shouldn't fail the service start that
+// already succeeded.
+func (m *Manager) startAutoWorkers(ctx context.Context, serviceID string, cfg config.ServiceConfig) {
+	for _, w := range cfg.Workers {
+		if !w.AutoStart {
+			continue
+		}
+		if err := m.StartWorker(ctx, serviceID, w.ID); err != nil && !errors.Is(err, ErrWorkerAlreadyRunning) {
+			log.Printf("autoStart worker %q for service %q: %v", w.ID, serviceID, err)
+		}
+	}
+}
+
+// stopAutoWorkers stops every currently-running autoStart worker for a
+// service — the symmetric half of startAutoWorkers, called once the service
+// itself has stopped or crashed (watchExit) so a Sidekiq tied to a Rails
+// server doesn't keep running (or looks orphaned) after its parent exits.
+func (m *Manager) stopAutoWorkers(serviceID string, cfg config.ServiceConfig) {
+	for _, w := range cfg.Workers {
+		if !w.AutoStart {
+			continue
+		}
+		if err := m.StopWorker(context.Background(), serviceID, w.ID); err != nil && !errors.Is(err, ErrWorkerNotRunning) {
+			log.Printf("stop autoStart worker %q for service %q: %v", w.ID, serviceID, err)
+		}
+	}
 }
 
 // StopService signals the running process and waits for it to exit. It
@@ -393,9 +424,11 @@ func (m *Manager) watchExit(sr *serviceRuntime, proc *RunningProcess) {
 		}
 	}
 	id := sr.config.ID
+	cfg := sr.config
 	sr.mu.Unlock()
 	m.health.Stop(id)
 	m.emit(EventServiceUpdated, id, sr.snapshot())
+	go m.stopAutoWorkers(id, cfg)
 }
 
 // SetServiceHealth records a new health status for id and emits
@@ -535,8 +568,10 @@ func (m *Manager) StopWorker(ctx context.Context, serviceID, workerID string) er
 		wr.mu.Unlock()
 		return fmt.Errorf("%w: %s/%s", ErrWorkerNotRunning, serviceID, workerID)
 	}
+	wr.state.Status = WorkerStopping
 	proc := wr.proc
 	wr.mu.Unlock()
+	m.emitWorker(serviceID, wr)
 
 	if proc == nil {
 		return nil
@@ -548,7 +583,9 @@ func (m *Manager) StopWorker(ctx context.Context, serviceID, workerID string) er
 }
 
 // watchWorkerExit is the single writer for a worker's "process has exited"
-// transition, mirroring watchExit for services.
+// transition, mirroring watchExit for services: a deliberate stop (SIGTERM)
+// is reported as stopped even though the OS reports a non-zero/signal exit
+// code, since that's expected there, not a crash.
 func (m *Manager) watchWorkerExit(serviceID string, wr *workerRuntime, proc *RunningProcess) {
 	<-proc.Done()
 
@@ -558,9 +595,10 @@ func (m *Manager) watchWorkerExit(serviceID string, wr *workerRuntime, proc *Run
 		return
 	}
 	exitCode := proc.ExitCode()
+	wasStopping := wr.state.Status == WorkerStopping
 	wr.state.PID = 0
 	wr.state.LastExitCode = &exitCode
-	if exitCode == 0 {
+	if wasStopping || exitCode == 0 {
 		wr.state.Status = WorkerStopped
 	} else {
 		wr.state.Status = WorkerFailed
