@@ -2,12 +2,13 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"devctl/internal/applog"
 )
 
 // Load reads, parses, defaults, and validates a workspace config file at path.
@@ -57,7 +58,7 @@ func Load(path string) (*WorkspaceConfig, error) {
 func warnMissingPaths(cfg *WorkspaceConfig) {
 	for _, svc := range cfg.Services {
 		if info, err := os.Stat(svc.Path); err != nil || !info.IsDir() {
-			log.Printf("warning: service %q: path does not exist or is not a directory: %s", svc.ID, svc.Path)
+			applog.Warn("config", "warning: service %q: path does not exist or is not a directory: %s", svc.ID, svc.Path)
 		}
 	}
 }

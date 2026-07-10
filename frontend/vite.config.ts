@@ -1,5 +1,8 @@
 import path from 'node:path'
-import { defineConfig } from 'vite'
+// `vitest/config` re-exports Vite's `defineConfig` merged with the `test`
+// option's types, so this file stays a single source of truth for both
+// `vite` and `vitest run` without needing a separate vitest.config.ts.
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
@@ -19,5 +22,9 @@ export default defineConfig({
         ws: true,
       },
     },
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
   },
 })

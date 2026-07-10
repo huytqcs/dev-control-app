@@ -126,3 +126,29 @@ export function stopWorker(
     { method: "POST" },
   );
 }
+
+export function runAction(serviceId: string, actionId: string): Promise<{ runId: string }> {
+  return request<{ runId: string }>(`/api/services/${serviceId}/actions/${actionId}`, { method: "POST" });
+}
+
+export function openBrowser(id: string): Promise<{ status: string }> {
+  return request<{ status: string }>(`/api/services/${id}/open-browser`, {
+    method: "POST",
+  });
+}
+
+export function openRepo(id: string): Promise<{ status: string }> {
+  return request<{ status: string }>(`/api/services/${id}/open-repo`, {
+    method: "POST",
+  });
+}
+
+export function openTerminal(id: string): Promise<{ status: string }> {
+  return request<{ status: string }>(`/api/services/${id}/open-terminal`, {
+    method: "POST",
+  });
+}
+
+export function stopAll(): Promise<PresetActionResult> {
+  return request<PresetActionResult>("/api/stop-all", { method: "POST" });
+}

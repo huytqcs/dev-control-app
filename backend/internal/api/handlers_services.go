@@ -64,6 +64,18 @@ func (h *Handlers) ForceKillService(w http.ResponseWriter, r *http.Request) {
 	h.writeServiceState(w, id)
 }
 
+// StopAll stops every currently running service and worker — the deliberate
+// "Stop All" UI action (GAMMA_PLAN.md T-080 decision), not an implicit
+// stop-on-exit default.
+func (h *Handlers) StopAll(w http.ResponseWriter, r *http.Request) {
+	errs := h.Runtime.StopAll(r.Context())
+	messages := make([]string, 0, len(errs))
+	for _, e := range errs {
+		messages = append(messages, e.Error())
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"errors": messages})
+}
+
 func (h *Handlers) writeServiceState(w http.ResponseWriter, id string) {
 	cfg, ok := h.Workspace.GetService(id)
 	if !ok {

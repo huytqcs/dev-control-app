@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"devctl/internal/actions"
 	"devctl/internal/api"
 	"devctl/internal/config"
 	"devctl/internal/git"
@@ -42,6 +43,8 @@ func New(configPath string) (*App, error) {
 	gitSvc := git.NewService()
 	runtimeMgr.SetGitProbe(runtime.NewGitAdapter(gitSvc))
 
+	actionsSvc := actions.NewService(logMgr, hub)
+
 	// Best-effort startup work: adopt any service still holding its port from
 	// a previous backend instance (BETA_PLAN orphan-reconciliation decision,
 	// option 1) and take an initial git-status snapshot for every service
@@ -54,6 +57,7 @@ func New(configPath string) (*App, error) {
 		Runtime:   runtimeMgr,
 		Logs:      logMgr,
 		Git:       gitSvc,
+		Actions:   actionsSvc,
 		Hub:       hub,
 	})
 

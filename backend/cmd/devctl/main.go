@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"devctl/internal/app"
+	"devctl/internal/applog"
 )
 
 func main() {
@@ -31,20 +32,20 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("devctl listening on http://%s", *addr)
+		applog.Info("main", "devctl listening on http://%s", *addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("server error: %v", err)
 		}
 	}()
 
 	<-ctx.Done()
-	log.Println("shutting down...")
+	applog.Info("main", "shutting down...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), a.ShutdownTimeout())
 	defer cancel()
 
 	a.Shutdown(shutdownCtx)
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("http shutdown error: %v", err)
+		applog.Error("main", "http shutdown error: %v", err)
 	}
 }

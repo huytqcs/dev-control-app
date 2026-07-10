@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"sync"
 	"time"
 
+	"devctl/internal/applog"
 	"devctl/internal/config"
 	"devctl/internal/logs"
 	"devctl/internal/workspace"
@@ -225,7 +225,7 @@ func (m *Manager) startAutoWorkers(ctx context.Context, serviceID string, cfg co
 			continue
 		}
 		if err := m.StartWorker(ctx, serviceID, w.ID); err != nil && !errors.Is(err, ErrWorkerAlreadyRunning) {
-			log.Printf("autoStart worker %q for service %q: %v", w.ID, serviceID, err)
+			applog.Error("runtime", "autoStart worker %q for service %q: %v", w.ID, serviceID, err)
 		}
 	}
 }
@@ -240,7 +240,7 @@ func (m *Manager) stopAutoWorkers(serviceID string, cfg config.ServiceConfig) {
 			continue
 		}
 		if err := m.StopWorker(context.Background(), serviceID, w.ID); err != nil && !errors.Is(err, ErrWorkerNotRunning) {
-			log.Printf("stop autoStart worker %q for service %q: %v", w.ID, serviceID, err)
+			applog.Error("runtime", "stop autoStart worker %q for service %q: %v", w.ID, serviceID, err)
 		}
 	}
 }
@@ -362,7 +362,7 @@ func (m *Manager) dependsOnMap() map[string][]string {
 func (m *Manager) StartPreset(ctx context.Context, ids []string) []error {
 	order, hadCycle := topoSortServices(ids, m.dependsOnMap())
 	if hadCycle {
-		log.Printf("preset: dependency cycle detected among %v; falling back to config order", ids)
+		applog.Warn("runtime", "preset: dependency cycle detected among %v; falling back to config order", ids)
 	}
 
 	var errs []error
@@ -378,7 +378,7 @@ func (m *Manager) StartPreset(ctx context.Context, ids []string) []error {
 func (m *Manager) StopPreset(ctx context.Context, ids []string) []error {
 	order, hadCycle := topoSortServices(ids, m.dependsOnMap())
 	if hadCycle {
-		log.Printf("preset: dependency cycle detected among %v; falling back to config order", ids)
+		applog.Warn("runtime", "preset: dependency cycle detected among %v; falling back to config order", ids)
 	}
 
 	var errs []error
@@ -388,6 +388,39 @@ func (m *Manager) StopPreset(ctx context.Context, ids []string) []error {
 			errs = append(errs, err)
 		}
 	}
+	return errs
+}
+
+// StopAll stops every currently running worker and service. This is the
+// deliberate "Stop All" UI action (GAMMA_PLAN.md T-080 decision) — not an
+// implicit stop-on-exit default, which would fight ReconcileOrphans'
+// purpose of letting services survive a devctl backend restart. Workers are
+// stopped first (autoStart ones would otherwise race with their parent
+// service's own stopAutoWorkers call): independently-controlled workers
+// aren't tied to their service's lifecycle, so StopService alone wouldn't
+// reach them.
+func (m *Manager) StopAll(ctx context.Context) []error {
+	m.mu.RLock()
+	ids := append([]string(nil), m.order...)
+	m.mu.RUnlock()
+
+	var errs []error
+	for _, id := range ids {
+		sr, err := m.getRuntime(id)
+		if err != nil {
+			continue
+		}
+		for _, w := range sr.snapshot().Workers {
+			if w.Status == WorkerStopped {
+				continue
+			}
+			if err := m.StopWorker(ctx, id, w.ID); err != nil && !errors.Is(err, ErrWorkerNotRunning) {
+				errs = append(errs, err)
+			}
+		}
+	}
+
+	errs = append(errs, m.StopPreset(ctx, ids)...)
 	return errs
 }
 
@@ -486,7 +519,7 @@ func (m *Manager) RefreshAllGitStates(ctx context.Context) {
 		go func(id string) {
 			defer wg.Done()
 			if _, err := m.RefreshGitState(ctx, id); err != nil {
-				log.Printf("git: initial refresh for %q: %v", id, err)
+				applog.Error("runtime", "git: initial refresh for %q: %v", id, err)
 			}
 		}(id)
 	}

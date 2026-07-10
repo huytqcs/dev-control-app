@@ -2,12 +2,12 @@ package api
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"sync"
 
 	"github.com/gorilla/websocket"
 
+	"devctl/internal/applog"
 	"devctl/internal/runtime"
 )
 
@@ -37,7 +37,7 @@ type wsClient struct {
 func (hub *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("ws upgrade failed: %v", err)
+		applog.Error("ws", "ws upgrade failed: %v", err)
 		return
 	}
 
@@ -107,7 +107,7 @@ func (hub *Hub) Broadcast(data []byte) {
 func (hub *Hub) Publish(evt runtime.AppEvent) {
 	data, err := json.Marshal(evt)
 	if err != nil {
-		log.Printf("ws: marshal event: %v", err)
+		applog.Error("ws", "ws: marshal event: %v", err)
 		return
 	}
 	hub.Broadcast(data)

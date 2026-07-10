@@ -138,9 +138,31 @@ export interface WorkerUpdatedEvent {
   time: string;
 }
 
+export interface ActionOutputEvent {
+  type: "action.output";
+  serviceId: string;
+  payload: { runId: string; actionId: string; entry: LogEntry };
+  time: string;
+}
+
+export interface ActionCompletedEvent {
+  type: "action.completed";
+  serviceId: string;
+  payload: {
+    runId: string;
+    actionId: string;
+    exitCode: number;
+    success: boolean;
+    error?: string;
+  };
+  time: string;
+}
+
 export type AppEvent =
   | ServiceUpdatedEvent
   | LogAppendedEvent
   | HealthUpdatedEvent
   | GitUpdatedEvent
-  | WorkerUpdatedEvent;
+  | WorkerUpdatedEvent
+  | ActionOutputEvent
+  | ActionCompletedEvent;

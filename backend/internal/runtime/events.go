@@ -14,6 +14,13 @@ const (
 	EventHealthUpdated  EventType = "health.updated"
 	EventGitUpdated     EventType = "git.updated"
 	EventWorkerUpdated  EventType = "worker.updated"
+
+	// EventActionOutput and EventActionCompleted are emitted by
+	// internal/actions.Service for one-off config-defined action runs, which
+	// are deliberately kept separate from service/worker lifecycle state
+	// (ARCHITECTURE.md §12.3).
+	EventActionOutput    EventType = "action.output"
+	EventActionCompleted EventType = "action.completed"
 )
 
 type AppEvent struct {
@@ -37,6 +44,20 @@ type GitUpdatedPayload struct {
 
 type WorkerUpdatedPayload struct {
 	Worker WorkerState `json:"worker"`
+}
+
+type ActionOutputPayload struct {
+	RunID    string        `json:"runId"`
+	ActionID string        `json:"actionId"`
+	Entry    logs.LogEntry `json:"entry"`
+}
+
+type ActionCompletedPayload struct {
+	RunID    string `json:"runId"`
+	ActionID string `json:"actionId"`
+	ExitCode int    `json:"exitCode"`
+	Success  bool   `json:"success"`
+	Error    string `json:"error,omitempty"`
 }
 
 // EventPublisher receives runtime events for fan-out (e.g. to WebSocket

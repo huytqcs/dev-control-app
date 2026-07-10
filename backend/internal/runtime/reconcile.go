@@ -3,13 +3,14 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"devctl/internal/applog"
 )
 
 // reconcileProbeTimeout bounds each per-service port dial at startup so a
@@ -50,7 +51,7 @@ func (m *Manager) ReconcileOrphans(ctx context.Context) {
 		sr.mu.Unlock()
 		m.health.Start(id, checks)
 		m.emit(EventServiceUpdated, id, sr.snapshot())
-		log.Printf("reconcile: adopted orphaned service %q on port %d as running", id, port)
+		applog.Info("reconcile", "adopted orphaned service %q on port %d as running", id, port)
 	}
 }
 

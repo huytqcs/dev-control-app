@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 
+	"devctl/internal/actions"
 	"devctl/internal/git"
 	"devctl/internal/logs"
 	"devctl/internal/runtime"
@@ -19,6 +20,7 @@ type Handlers struct {
 	Runtime   *runtime.Manager
 	Logs      *logs.Manager
 	Git       *git.Service
+	Actions   *actions.Service
 	Hub       *Hub
 }
 
@@ -42,6 +44,8 @@ func NewRouter(h *Handlers) *chi.Mux {
 			r.Post("/stop", h.StopPreset)
 		})
 
+		r.Post("/stop-all", h.StopAll)
+
 		r.Route("/services", func(r chi.Router) {
 			r.Get("/", h.ListServices)
 
@@ -52,6 +56,9 @@ func NewRouter(h *Handlers) *chi.Mux {
 				r.Post("/stop", h.StopService)
 				r.Post("/restart", h.RestartService)
 				r.Post("/force-kill", h.ForceKillService)
+				r.Post("/open-browser", h.OpenBrowser)
+				r.Post("/open-repo", h.OpenRepo)
+				r.Post("/open-terminal", h.OpenTerminal)
 
 				r.Route("/git", func(r chi.Router) {
 					r.Get("/branches", h.GitBranches)
@@ -65,6 +72,8 @@ func NewRouter(h *Handlers) *chi.Mux {
 					r.Post("/start", h.StartWorker)
 					r.Post("/stop", h.StopWorker)
 				})
+
+				r.Post("/actions/{actionID}", h.RunAction)
 			})
 		})
 	})

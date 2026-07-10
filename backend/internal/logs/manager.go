@@ -64,3 +64,10 @@ func ServiceStreamKey(serviceID string) string {
 func WorkerStreamKey(serviceID, workerID string) string {
 	return "worker:" + serviceID + ":" + workerID
 }
+
+// ActionStreamKey identifies the output stream for one run of a config-defined
+// action (ARCHITECTURE.md §12.3: action runs are their own execution flow,
+// separate from service/worker runtime state).
+func ActionStreamKey(serviceID, actionID, runID string) string {
+	return "action:" + serviceID + ":" + actionID + ":" + runID
+}

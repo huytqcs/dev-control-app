@@ -12,7 +12,8 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { HealthBadge } from "@/components/health/HealthBadge";
 import { GitPanel } from "@/components/git/GitPanel";
 import { WorkerControls } from "@/components/workspace/WorkerControls";
-import { forceKillService } from "@/lib/api";
+import { ActionsPanel } from "@/components/actions/ActionsPanel";
+import { forceKillService, openBrowser, openRepo, openTerminal } from "@/lib/api";
 import { servicesQueryKey } from "@/hooks/useServicesQuery";
 import type { ServiceDTO } from "@/types/api";
 
@@ -29,6 +30,9 @@ export function ServiceDetailsPanel({
         prev?.map((s) => (s.id === updated.id ? updated : s)),
       ),
   });
+  const openBrowserMut = useMutation({ mutationFn: () => openBrowser(service!.id) });
+  const openRepoMut = useMutation({ mutationFn: () => openRepo(service!.id) });
+  const openTerminalMut = useMutation({ mutationFn: () => openTerminal(service!.id) });
 
   if (!service) {
     return (
@@ -51,6 +55,35 @@ export function ServiceDetailsPanel({
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          {service.openUrls.length > 0 ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={openBrowserMut.isPending}
+              onClick={() => openBrowserMut.mutate()}
+              title={`Open ${service.openUrls[0]}`}
+            >
+              Open
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={openRepoMut.isPending}
+            onClick={() => openRepoMut.mutate()}
+            title="Open repo folder in Finder"
+          >
+            Finder
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={openTerminalMut.isPending}
+            onClick={() => openTerminalMut.mutate()}
+            title="Open Terminal at repo path"
+          >
+            Terminal
+          </Button>
           <HealthBadge status={service.state.health.status} />
           <StatusBadge status={service.state.status} />
         </div>
@@ -61,6 +94,7 @@ export function ServiceDetailsPanel({
           <TabsTrigger value="logs">Logs</TabsTrigger>
           <TabsTrigger value="git">Git</TabsTrigger>
           <TabsTrigger value="workers">Workers</TabsTrigger>
+          <TabsTrigger value="actions">Actions</TabsTrigger>
           <TabsTrigger value="info">Info</TabsTrigger>
         </TabsList>
 
@@ -74,6 +108,10 @@ export function ServiceDetailsPanel({
 
         <TabsContent value="workers" className="min-h-0 flex-1 overflow-y-auto p-4">
           <WorkerControls service={service} />
+        </TabsContent>
+
+        <TabsContent value="actions" className="min-h-0 flex-1 overflow-y-auto p-4">
+          <ActionsPanel service={service} />
         </TabsContent>
 
         <TabsContent value="info" className="min-h-0 flex-1 overflow-y-auto p-4 text-sm">
