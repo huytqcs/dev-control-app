@@ -6,6 +6,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"devctl/internal/health"
 	"devctl/internal/logs"
 	"devctl/internal/runtime"
+	"devctl/internal/webui"
 	"devctl/internal/workspace"
 )
 
@@ -52,6 +54,16 @@ func New(configPath string) (*App, error) {
 	runtimeMgr.ReconcileOrphans(context.Background())
 	go runtimeMgr.RefreshAllGitStates(context.Background())
 
+	// Always embed: during `go run` (daily devctl development) dist/ only
+	// has its .gitkeep placeholder, so this static fallback just 404s and
+	// the Vite dev server on :5173 is what's actually browsed. A `make
+	// build` release binary is the only case where dist/ has real content
+	// (DELTA_PLAN.md "embed unconditionally, don't build-tag it").
+	distFS, err := fs.Sub(webui.DistFS, "dist")
+	if err != nil {
+		return nil, fmt.Errorf("load embedded frontend: %w", err)
+	}
+
 	router := api.NewRouter(&api.Handlers{
 		Workspace: ws,
 		Runtime:   runtimeMgr,
@@ -59,7 +71,7 @@ func New(configPath string) (*App, error) {
 		Git:       gitSvc,
 		Actions:   actionsSvc,
 		Hub:       hub,
-	})
+	}, distFS)
 
 	return &App{router: router, Runtime: runtimeMgr}, nil
 }

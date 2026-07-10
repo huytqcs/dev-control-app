@@ -99,11 +99,17 @@ export function gitPush(id: string): Promise<GitStateDTO> {
   });
 }
 
-export function gitCheckout(id: string, branch: string): Promise<GitStateDTO> {
+export function gitCheckout(
+  id: string,
+  branch: string,
+  createFrom?: string,
+): Promise<GitStateDTO> {
   return request<GitStateDTO>(`/api/services/${id}/git/checkout`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ branch }),
+    body: JSON.stringify(
+      createFrom ? { branch, create: true, from: createFrom } : { branch },
+    ),
   });
 }
 

@@ -125,11 +125,33 @@ func (s *Service) Push(ctx context.Context, repoPath string) error {
 var validRefName = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 
 func (s *Service) Checkout(ctx context.Context, repoPath, branch string) error {
-	if branch == "" || strings.HasPrefix(branch, "-") || !validRefName.MatchString(branch) {
-		return fmt.Errorf("invalid branch name %q", branch)
+	if err := checkRefName(branch); err != nil {
+		return err
 	}
 	_, err := runGit(ctx, repoPath, defaultTimeout, "checkout", branch)
 	return err
+}
+
+// CreateBranch creates and checks out a new branch from an existing ref
+// (Plan.md §C "maybe v1.1" — checkout-only wasn't enough once someone wants
+// to start new work from main). Both names go through the same validation
+// as Checkout since `from` is just as attacker/typo-controlled as `name`.
+func (s *Service) CreateBranch(ctx context.Context, repoPath, name, from string) error {
+	if err := checkRefName(name); err != nil {
+		return err
+	}
+	if err := checkRefName(from); err != nil {
+		return err
+	}
+	_, err := runGit(ctx, repoPath, defaultTimeout, "checkout", "-b", name, from)
+	return err
+}
+
+func checkRefName(ref string) error {
+	if ref == "" || strings.HasPrefix(ref, "-") || !validRefName.MatchString(ref) {
+		return fmt.Errorf("invalid branch name %q", ref)
+	}
+	return nil
 }
 
 func parseAheadBehind(out string) (ahead, behind int) {

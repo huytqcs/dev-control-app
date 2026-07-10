@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -27,6 +28,7 @@ export function ServiceCard({
   onRestart: () => void;
   pending: boolean;
 }) {
+  const [errorExpanded, setErrorExpanded] = useState(false);
   const status = service.state.status;
   const isRunning = status === "running" || status === "starting";
 
@@ -34,7 +36,7 @@ export function ServiceCard({
     <Card
       onClick={onSelect}
       className={cn(
-        "cursor-pointer gap-3 transition-colors hover:bg-muted/50",
+        "cursor-pointer gap-2.5 transition-colors hover:bg-muted/50",
         isSelected && "ring-2 ring-primary",
       )}
     >
@@ -45,10 +47,13 @@ export function ServiceCard({
           <StatusBadge status={status} />
         </div>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+      <CardContent className="flex flex-col gap-2.5">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {service.port ? <span>:{service.port}</span> : null}
-          <span>{service.state.git.branch || "—"}</span>
+          {service.port ? <span className="text-border">·</span> : null}
+          <span className="truncate rounded-sm bg-muted px-1.5 py-0.5 font-mono">
+            {service.state.git.branch || "—"}
+          </span>
         </div>
 
         <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
@@ -71,12 +76,23 @@ export function ServiceCard({
         </div>
 
         {service.state.lastError ? (
-          <p
-            className="truncate text-xs text-destructive"
-            title={service.state.lastError}
-          >
-            {service.state.lastError}
-          </p>
+          <div onClick={(e) => e.stopPropagation()}>
+            <p
+              className={cn(
+                "font-mono text-xs text-destructive",
+                !errorExpanded && "truncate",
+              )}
+            >
+              {service.state.lastError}
+            </p>
+            <button
+              type="button"
+              onClick={() => setErrorExpanded((v) => !v)}
+              className="text-xs text-muted-foreground underline hover:text-foreground"
+            >
+              {errorExpanded ? "Show less" : "Show more"}
+            </button>
+          </div>
         ) : null}
       </CardContent>
     </Card>

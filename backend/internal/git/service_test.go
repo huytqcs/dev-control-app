@@ -94,6 +94,38 @@ func TestCheckout_RejectsInvalidRef(t *testing.T) {
 	}
 }
 
+func TestCreateBranch_CreatesAndChecksOut(t *testing.T) {
+	dir := initRepo(t)
+	svc := NewService()
+
+	if err := svc.CreateBranch(context.Background(), dir, "feature-y", "main"); err != nil {
+		t.Fatalf("CreateBranch: %v", err)
+	}
+
+	status, err := svc.Status(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if status.Branch != "feature-y" {
+		t.Fatalf("expected branch feature-y, got %q", status.Branch)
+	}
+}
+
+func TestCreateBranch_RejectsInvalidRef(t *testing.T) {
+	dir := initRepo(t)
+	svc := NewService()
+
+	cases := []string{"", "-force", "--hard", "; rm -rf /"}
+	for _, invalid := range cases {
+		if err := svc.CreateBranch(context.Background(), dir, invalid, "main"); err == nil {
+			t.Fatalf("expected CreateBranch(name=%q) to be rejected, got nil error", invalid)
+		}
+		if err := svc.CreateBranch(context.Background(), dir, "feature-z", invalid); err == nil {
+			t.Fatalf("expected CreateBranch(from=%q) to be rejected, got nil error", invalid)
+		}
+	}
+}
+
 func TestListBranches_LocalOnly(t *testing.T) {
 	dir := initRepo(t)
 	run(t, dir, "branch", "feature-a")

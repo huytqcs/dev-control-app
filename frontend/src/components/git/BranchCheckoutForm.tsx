@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const MAX_VISIBLE_MATCHES = 8;
@@ -14,17 +13,25 @@ export function BranchCheckoutForm({
   branches: string[];
   currentBranch: string;
   branchesLoading: boolean;
-  onCheckout: (branch: string) => void;
+  onCheckout: (branch: string, createFrom?: string) => void;
   pending: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
 
+  const trimmedQuery = query.trim();
   const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = trimmedQuery.toLowerCase();
     const pool = q ? branches.filter((b) => b.toLowerCase().includes(q)) : branches;
     return pool.slice(0, MAX_VISIBLE_MATCHES);
-  }, [branches, query]);
+  }, [branches, trimmedQuery]);
+
+  // No exact match for the typed name — offer to branch it off HEAD instead
+  // of just dead-ending the search (Plan.md §C "create branch from main").
+  const canCreate =
+    !branchesLoading &&
+    trimmedQuery !== "" &&
+    !branches.some((b) => b.toLowerCase() === trimmedQuery.toLowerCase());
 
   function submit(branch: string) {
     const trimmed = branch.trim();
@@ -33,13 +40,25 @@ export function BranchCheckoutForm({
     setOpen(false);
   }
 
+  function submitCreate() {
+    if (!trimmedQuery || !canCreate) return;
+    onCheckout(trimmedQuery, currentBranch);
+    setOpen(false);
+  }
+
   return (
     <div className="relative">
       <form
-        className="flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          submit(query);
+          // Enter acts on the top dropdown row — same thing clicking it
+          // does — instead of a separate "Checkout" button re-submitting
+          // whatever's typed as if it were its own path.
+          if (matches.length > 0) {
+            submit(matches[0]);
+          } else if (canCreate) {
+            submitCreate();
+          }
         }}
       >
         <input
@@ -52,14 +71,11 @@ export function BranchCheckoutForm({
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           placeholder={branchesLoading ? "loading branches…" : "search branches…"}
           disabled={pending}
-          className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="h-8 w-full min-w-0 rounded-md border bg-background px-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
         />
-        <Button type="submit" size="sm" variant="outline" disabled={pending || !query.trim()}>
-          Checkout
-        </Button>
       </form>
 
-      {open && matches.length > 0 ? (
+      {open && (matches.length > 0 || canCreate) ? (
         <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-md border bg-popover text-sm shadow-md">
           {matches.map((b) => (
             <li key={b}>
@@ -80,6 +96,18 @@ export function BranchCheckoutForm({
               </button>
             </li>
           ))}
+          {canCreate ? (
+            <li className={matches.length > 0 ? "border-t" : undefined}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={submitCreate}
+                className="block w-full truncate px-2 py-1 text-left text-primary hover:bg-muted"
+              >
+                Create &ldquo;{trimmedQuery}&rdquo; from {currentBranch || "current branch"}
+              </button>
+            </li>
+          ) : null}
         </ul>
       ) : null}
     </div>

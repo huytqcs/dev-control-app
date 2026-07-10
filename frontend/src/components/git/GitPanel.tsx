@@ -46,8 +46,12 @@ export function GitPanel({ service }: { service: ServiceDTO }) {
   });
   const pushMut = useMutation({ mutationFn: () => gitPush(service.id), onSuccess: applyGitState });
   const checkoutMut = useMutation({
-    mutationFn: (branch: string) => gitCheckout(service.id, branch),
-    onSuccess: applyGitState,
+    mutationFn: ({ branch, createFrom }: { branch: string; createFrom?: string }) =>
+      gitCheckout(service.id, branch, createFrom),
+    onSuccess: (git) => {
+      applyGitState(git);
+      refreshBranches();
+    },
   });
 
   const pending =
@@ -94,7 +98,7 @@ export function GitPanel({ service }: { service: ServiceDTO }) {
         branchesLoading={branchesQuery.isLoading}
         currentBranch={git.branch}
         pending={checkoutMut.isPending}
-        onCheckout={(branch) => checkoutMut.mutate(branch)}
+        onCheckout={(branch, createFrom) => checkoutMut.mutate({ branch, createFrom })}
       />
 
       {error ? (

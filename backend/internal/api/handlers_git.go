@@ -11,6 +11,8 @@ import (
 
 type checkoutRequest struct {
 	Branch string `json:"branch"`
+	Create bool   `json:"create,omitempty"`
+	From   string `json:"from,omitempty"`
 }
 
 // runGitAction runs a git action against the service's repo path, then
@@ -77,6 +79,9 @@ func (h *Handlers) GitCheckout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.runGitAction(w, r, func(ctx context.Context, path string) error {
+		if body.Create {
+			return h.Git.CreateBranch(ctx, path, body.Branch, body.From)
+		}
 		return h.Git.Checkout(ctx, path, body.Branch)
 	})
 }

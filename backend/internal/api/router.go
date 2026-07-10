@@ -1,7 +1,9 @@
 package api
 
 import (
+	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -24,7 +26,13 @@ type Handlers struct {
 	Hub       *Hub
 }
 
-func NewRouter(h *Handlers) *chi.Mux {
+// NewRouter builds the API/WS router. distFS, when non-nil, is the built
+// frontend (rooted at its index.html, not the "dist" wrapper dir) — any GET
+// that doesn't match /healthz, /ws, or /api falls through to it, serving
+// index.html for unmatched paths so client-side routing works. Passing nil
+// (the `go run` daily-dev path, where Vite serves the UI instead) disables
+// static serving entirely.
+func NewRouter(h *Handlers, distFS fs.FS) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
@@ -78,5 +86,35 @@ func NewRouter(h *Handlers) *chi.Mux {
 		})
 	})
 
+	if distFS != nil {
+		r.NotFound(spaHandler(distFS))
+	}
+
 	return r
+}
+
+// spaHandler serves the embedded frontend, falling back to index.html for
+// any path with no matching file (client-side routes like /services/foo).
+// /api and /ws are registered directly on the router above and never reach
+// chi's NotFound, so they're unaffected by this fallback.
+func spaHandler(distFS fs.FS) http.HandlerFunc {
+	fileServer := http.FileServer(http.FS(distFS))
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api") || r.URL.Path == "/ws" {
+			http.NotFound(w, r)
+			return
+		}
+
+		reqPath := strings.TrimPrefix(r.URL.Path, "/")
+		if reqPath == "" {
+			reqPath = "index.html"
+		}
+		if _, err := fs.Stat(distFS, reqPath); err != nil {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/"
+			fileServer.ServeHTTP(w, r2)
+			return
+		}
+		fileServer.ServeHTTP(w, r)
+	}
 }
