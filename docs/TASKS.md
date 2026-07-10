@@ -606,6 +606,10 @@ Verify the first usable flow:
 
 # Sprint 3 — Daily-driver beta core
 
+**Status: done.** T-050 → T-064, T-092, T-093 shipped — see docs/BETA_PLAN.md
+for the implementation notes, the orphan-reconciliation decision, and one
+addition beyond this original breakdown (worker `autoStart`).
+
 ## T-050 — Implement preset start/stop backend endpoints
 - **Priority:** P1
 - **Estimate:** M

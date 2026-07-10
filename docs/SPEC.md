@@ -226,6 +226,7 @@ type WorkerConfig struct {
 	Name         string            `yaml:"name"`
 	StartCommand []string          `yaml:"startCommand"`
 	Env          map[string]string `yaml:"env"`
+	AutoStart    bool              `yaml:"autoStart"` // start/stop with the parent service (e.g. Sidekiq with Rails)
 }
 
 type PresetConfig struct {
@@ -277,6 +278,7 @@ const (
 	WorkerStarting WorkerStatus = "starting"
 	WorkerRunning  WorkerStatus = "running"
 	WorkerFailed   WorkerStatus = "failed"
+	WorkerStopping WorkerStatus = "stopping"
 )
 
 type WorkerState struct {
@@ -289,17 +291,14 @@ type WorkerState struct {
 }
 
 type HealthState struct {
-	Status      string     `json:"status"` // unknown | healthy | unhealthy
-	Message     string     `json:"message,omitempty"`
-	LastChecked *time.Time `json:"lastChecked,omitempty"`
+	Status string `json:"status"` // unknown | healthy | unhealthy
 }
 
 type GitState struct {
-	Branch      string `json:"branch"`
-	Dirty       bool   `json:"dirty"`
-	Ahead       int    `json:"ahead,omitempty"`
-	Behind      int    `json:"behind,omitempty"`
-	LastUpdated string `json:"lastUpdated,omitempty"`
+	Branch string `json:"branch"`
+	Dirty  bool   `json:"dirty"`
+	Ahead  int    `json:"ahead"`
+	Behind int    `json:"behind"`
 }
 
 type ServiceState struct {
@@ -352,13 +351,22 @@ type ServiceStateDTO struct {
 type GitStateDTO struct {
 	Branch string `json:"branch"`
 	Dirty  bool   `json:"dirty"`
-	Ahead  int    `json:"ahead,omitempty"`
-	Behind int    `json:"behind,omitempty"`
+	Ahead  int    `json:"ahead"`
+	Behind int    `json:"behind"`
 }
 
 type HealthStateDTO struct {
-	Status  string `json:"status"`
-	Message string `json:"message,omitempty"`
+	Status string `json:"status"`
+}
+
+type WorkerSummaryDTO struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Status       string `json:"status"`
+	PID          int    `json:"pid,omitempty"`
+	LastError    string `json:"lastError,omitempty"`
+	LastExitCode *int   `json:"lastExitCode,omitempty"`
+	AutoStart    bool   `json:"autoStart"`
 }
 ```
 
@@ -586,8 +594,10 @@ Workers are child runtime units attached to a service.
 
 ## Rules
 - workers are configured inside a service
-- workers can be started/stopped independently
-- if a service is stopped, workers should also stop unless intentionally decoupled
+- workers can be started/stopped independently by default
+- `autoStart: true` on a worker ties it to its parent service's lifecycle:
+  it starts when the service starts and stops when the service stops or
+  crashes (e.g. Sidekiq with Rails). Default `false` keeps it decoupled.
 - worker logs should be stored separately but still associated with the parent service in the UI
 
 ## Log stream key
@@ -779,21 +789,32 @@ Use a single event envelope.
 type EventEnvelope struct {
 	Type      string      `json:"type"`
 	ServiceID string      `json:"serviceId,omitempty"`
-	WorkerID  string      `json:"workerId,omitempty"`
 	Payload   interface{} `json:"payload"`
 	Time      string      `json:"time"`
 }
 ```
 
+Worker events carry the worker's own ID inside their payload (see
+`worker.updated` below) rather than a top-level `workerId` — every event is
+still scoped to a service via `serviceId`.
+
 ## 18.1 Event types
 
 ### `service.updated`
-Payload:
+Payload is the full runtime `ServiceState` (§7.2) for the service, not just
+the changed fields:
 ```json
 {
+  "id": "core-be",
+  "name": "Core BE",
   "status": "running",
   "pid": 12345,
-  "lastError": ""
+  "port": 3000,
+  "git": { "branch": "main", "dirty": false, "ahead": 0, "behind": 0 },
+  "health": { "status": "healthy" },
+  "workers": [
+    { "id": "sidekiq", "name": "Sidekiq", "status": "running", "autoStart": true }
+  ]
 }
 ```
 
@@ -801,8 +822,13 @@ Payload:
 Payload:
 ```json
 {
-  "status": "running",
-  "pid": 12346
+  "worker": {
+    "id": "sidekiq",
+    "name": "Sidekiq",
+    "status": "running",
+    "pid": 12346,
+    "autoStart": true
+  }
 }
 ```
 
@@ -825,8 +851,7 @@ Payload:
 Payload:
 ```json
 {
-  "status": "healthy",
-  "message": ""
+  "health": { "status": "healthy" }
 }
 ```
 
@@ -834,10 +859,12 @@ Payload:
 Payload:
 ```json
 {
-  "branch": "feature/devctl-v2",
-  "dirty": true,
-  "ahead": 0,
-  "behind": 2
+  "git": {
+    "branch": "feature/devctl-v2",
+    "dirty": true,
+    "ahead": 0,
+    "behind": 2
+  }
 }
 ```
 
@@ -895,14 +922,14 @@ Return all services with current state.
       "state": {
         "status": "running",
         "pid": 12345,
-        "git": { "branch": "main", "dirty": false },
-        "health": { "status": "healthy", "message": "" }
+        "git": { "branch": "main", "dirty": false, "ahead": 0, "behind": 0 },
+        "health": { "status": "healthy" }
       },
       "actions": [
         { "id": "migrate", "name": "DB Migrate" }
       ],
       "workers": [
-        { "id": "sidekiq", "name": "Sidekiq" }
+        { "id": "sidekiq", "name": "Sidekiq", "status": "running", "autoStart": true }
       ]
     }
   ]
@@ -934,6 +961,11 @@ Start worker.
 
 ## `POST /api/services/:id/workers/:workerId/stop`
 Stop worker.
+
+### Response
+Both return `200 OK` with the full updated `ServiceDTO` (not just the
+worker) — the frontend patches its whole services cache entry from one
+response, same as start/stop/restart.
 
 ---
 
@@ -974,7 +1006,28 @@ Start all services in preset.
 - if one fails, continue or stop based on future policy; for MVP, continue but surface failures
 
 ## `POST /api/presets/:id/stop`
-Stop all services in preset.
+Stop all services in preset, in reverse dependency order.
+
+### Response
+```json
+{ "errors": [] }
+```
+`errors` lists one message per service that failed to start/stop (partial
+failure summary); an empty array means every service in the preset succeeded.
+Per-service progress is still observed via `service.updated` events, not
+this response.
+
+---
+
+# 19.3.1 Force-kill endpoint
+
+## `POST /api/services/:id/force-kill`
+Kills whatever process is listening on the service's configured port,
+regardless of whether this devctl backend believes it owns that process.
+Manual escape hatch for orphan reconciliation (§26.1) guessing wrong.
+
+### Response
+`200 OK` with the updated `ServiceDTO` (status reset to `stopped`).
 
 ---
 
@@ -1295,6 +1348,37 @@ This avoids surprising side effects.
 If cycle detected:
 - log warning
 - fall back to config order
+
+---
+
+# 26.1) Orphan reconciliation and force-kill
+
+Services run `Setsid` (§6, `process_runner.go`), each in its own session —
+so they survive a devctl backend restart as orphans still holding their
+port, even though the backend's fresh in-memory state has no record of them.
+
+## Reconciliation on startup
+On `app.New()`, `Manager.ReconcileOrphans` probes each stopped service's
+configured port; if something is already listening, it's adopted as
+`running` (best-effort, no real PID/process handle — never kills anything,
+just makes displayed state match reality).
+
+## Stop on a reconciled/handle-less service
+`StopService` on a service with no in-memory process handle (either
+adopted by reconciliation, or never started by this backend instance) falls
+back to `ForceKillPort`: kill whatever holds the configured port, by PID,
+via `lsof -ti :<port>` + `SIGKILL`.
+
+## Manual escape hatch
+`POST /api/services/:id/force-kill` (§19.3.1) exposes the same
+`ForceKillPort` mechanism directly, for when reconciliation's guess is
+wrong or a service is stuck in a state the UI can't otherwise recover from.
+
+## Not implemented
+A `pidfile:` config field would let reconciliation identify a service more
+precisely than a bare port probe (a port can be reused by something else
+entirely). Deferred — port probing covers the common case and needs no new
+config field.
 
 ---
 

@@ -1,5 +1,10 @@
 # Dev Control App V2 — Beta Implementation Plan
 
+**Status: shipped.** All of T-050 → T-064, T-092, T-093 are implemented and
+passed the beta smoke test against real repos. See "Decisions made" below for
+how the one open design question got resolved, and "Beyond original scope"
+for one addition made after this plan was written.
+
 Scope: TASKS.md Sprint 3 / Milestone C ("daily-driver beta core"), T-050 → T-064,
 plus cross-cutting T-092 (dependency-ordering tests) and T-093 (git service
 tests). Builds on the alpha runtime (config, process runner, log buffer,
@@ -37,7 +42,7 @@ in `internal/runtime/process_runner.go` and `internal/runtime/manager.go`:
   independent hooks decrementing a shared refcount could each think they
   were "the last consumer" and close a socket the other still needed).
 
-## New problem surfaced by alpha usage (needs a decision before beta lands)
+## New problem surfaced by alpha usage — decision made, implemented
 
 Services now run in their own detached session (`Setsid`), which means they
 **survive a devctl backend restart** as orphans — the backend's in-memory
@@ -47,27 +52,26 @@ restarting devctl during dev iteration left a live Rails server behind;
 starting it again through the UI failed with Rails' own
 "A server is already running" error, with no way to resolve it from the UI.
 
-Three ways to handle this — **not yet decided, pick one before/while building
-health checks (T-053), since reconciliation and health probing share the same
-"is something already listening here" logic**:
+Three ways were on the table; **went with (1) + (3), the recommended combo**:
 
-1. **Reconcile on startup (recommended)** — when the backend starts, probe
-   each service's configured port (or a `pidfile:` if we add that to the
-   schema); if something's already listening, adopt it as `running`
-   best-effort instead of showing a stale `stopped`/`failed`. Doesn't kill
-   anything, just makes displayed state match reality. Natural extension of
-   the health checker being built in this phase anyway.
-2. **Kill-on-exit** — backend shutdown sends `SIGTERM` to everything it
-   started. Simple, but means restarting devctl itself stops your dev
-   servers, which fights the "daily driver, iterate often" use case.
-3. **Manual force-kill action** — a per-service UI button that kills
-   whatever's listening on its configured port regardless of whether devctl
-   thinks it owns that process. Doesn't solve reconciliation, just gives an
-   escape hatch.
+1. **Reconcile on startup (recommended, shipped)** — `Manager.ReconcileOrphans`
+   probes each stopped service's configured port at backend startup; if
+   something's already listening, adopts it as `running` best-effort instead
+   of showing a stale `stopped`/`failed`. Doesn't kill anything, just makes
+   displayed state match reality. `internal/runtime/reconcile.go`.
+2. **Kill-on-exit** — not implemented, as expected: would stop dev servers on
+   every devctl restart, fighting the "daily driver, iterate often" use case.
+3. **Manual force-kill action (shipped)** — `POST /api/services/:id/force-kill`
+   + a button in the service detail panel's Info tab, kills whatever's
+   listening on the configured port via `lsof -ti :<port>` + `SIGKILL`,
+   regardless of whether devctl thinks it owns that process. Also reused as
+   `StopService`'s fallback for any service with no in-memory process handle
+   (an adopted orphan, or one never started by this backend instance) — a
+   deliberate Stop needs *some* way to actually kill it. `ForceKillPort` in
+   the same file backs both paths.
 
-(1) and (3) aren't mutually exclusive — (1) fixes the common case
-automatically, (3) is a reasonable safety valve for when reconciliation
-guesses wrong. (2) is probably not wanted. Confirm before starting T-053.
+`pidfile:` as a more precise alternative to bare port-probing was considered
+and deferred — see SPEC.md §26.1 "Not implemented".
 
 ---
 
@@ -151,11 +155,33 @@ above).
 
 ## Open questions deferred
 
-- Orphan-reconciliation strategy (see above) — needs a decision, not just a
-  recommendation, before T-053.
+- ~~Orphan-reconciliation strategy~~ — resolved, see above.
 - Should `pidfile:` become a first-class config field (some services, like
   Rails, already write one) to make reconciliation more precise than a bare
-  port probe? Port probing is simpler and works for anything with a
-  configured port; pidfile-based is more precise but Rails-specific.
-- Dependency cycle handling (T-051 MVP fallback: log + config order) — fine
-  for beta, revisit if it causes confusing preset-start behavior in practice.
+  port probe? Still deferred — port probing is simpler and works for
+  anything with a configured port; pidfile-based is more precise but
+  Rails-specific. Revisit if port reuse by an unrelated process causes a bad
+  adoption in practice.
+- Dependency cycle handling (T-051 MVP fallback: log + config order) —
+  shipped as-is, no cycles hit in the beta smoke test's real preset. Revisit
+  if it causes confusing preset-start behavior in practice.
+
+---
+
+## Beyond original scope: worker `autoStart`
+
+Not in the original T-060 → T-063 breakdown, added after a direct ask
+("start Sidekiq with its service, not as a separate manual step"):
+
+- `WorkerConfig.autoStart` (YAML `autoStart: true`) ties a worker to its
+  parent service's lifecycle — starts when the service starts, stops when
+  the service stops or crashes. Default `false` keeps the original
+  independently-controllable behavior (ARCHITECTURE.md §12.2).
+- Set on both real Sidekiq workers in `backend/devctl.yaml`; documented in
+  `devctl.example.yaml`.
+- Building this exposed a real bug in the original worker stop path: unlike
+  `StopService`, `StopWorker` had no `WorkerStopping` status, so a worker
+  killed by `SIGTERM` (exit via signal, not a clean exit 0 — the common case
+  for most real long-running commands) was misreported as `failed` instead
+  of `stopped`, for *any* worker stop, not just autoStart ones. Fixed by
+  giving workers the same stopping-state guard services already had.
