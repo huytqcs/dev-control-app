@@ -1,12 +1,21 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { BranchCheckoutForm } from "@/components/git/BranchCheckoutForm";
-import { gitCheckout, gitFetch, gitPull, gitPush } from "@/lib/api";
+import { gitCheckout, gitFetch, gitListBranches, gitPull, gitPush } from "@/lib/api";
 import { servicesQueryKey } from "@/hooks/useServicesQuery";
 import type { GitStateDTO, ServiceDTO } from "@/types/api";
 
+function branchesQueryKey(serviceId: string) {
+  return ["git-branches", serviceId] as const;
+}
+
 export function GitPanel({ service }: { service: ServiceDTO }) {
   const queryClient = useQueryClient();
+
+  const branchesQuery = useQuery({
+    queryKey: branchesQueryKey(service.id),
+    queryFn: () => gitListBranches(service.id),
+  });
 
   function applyGitState(git: GitStateDTO) {
     queryClient.setQueryData<ServiceDTO[]>(servicesQueryKey, (prev) =>
@@ -14,8 +23,27 @@ export function GitPanel({ service }: { service: ServiceDTO }) {
     );
   }
 
-  const fetchMut = useMutation({ mutationFn: () => gitFetch(service.id), onSuccess: applyGitState });
-  const pullMut = useMutation({ mutationFn: () => gitPull(service.id), onSuccess: applyGitState });
+  // Fetch/pull can surface branches that didn't exist locally before —
+  // refresh the branch list alongside git state instead of leaving it stale
+  // until the panel happens to remount.
+  function refreshBranches() {
+    queryClient.invalidateQueries({ queryKey: branchesQueryKey(service.id) });
+  }
+
+  const fetchMut = useMutation({
+    mutationFn: () => gitFetch(service.id),
+    onSuccess: (git) => {
+      applyGitState(git);
+      refreshBranches();
+    },
+  });
+  const pullMut = useMutation({
+    mutationFn: () => gitPull(service.id),
+    onSuccess: (git) => {
+      applyGitState(git);
+      refreshBranches();
+    },
+  });
   const pushMut = useMutation({ mutationFn: () => gitPush(service.id), onSuccess: applyGitState });
   const checkoutMut = useMutation({
     mutationFn: (branch: string) => gitCheckout(service.id, branch),
@@ -62,12 +90,19 @@ export function GitPanel({ service }: { service: ServiceDTO }) {
       </div>
 
       <BranchCheckoutForm
+        branches={branchesQuery.data ?? []}
+        branchesLoading={branchesQuery.isLoading}
+        currentBranch={git.branch}
         pending={checkoutMut.isPending}
         onCheckout={(branch) => checkoutMut.mutate(branch)}
       />
 
       {error ? (
         <p className="text-xs text-destructive">{(error as Error).message}</p>
+      ) : branchesQuery.isError ? (
+        <p className="text-xs text-destructive">
+          {(branchesQuery.error as Error).message}
+        </p>
       ) : null}
     </div>
   );

@@ -54,6 +54,7 @@ func NewRouter(h *Handlers) *chi.Mux {
 				r.Post("/force-kill", h.ForceKillService)
 
 				r.Route("/git", func(r chi.Router) {
+					r.Get("/branches", h.GitBranches)
 					r.Post("/fetch", h.GitFetch)
 					r.Post("/pull", h.GitPull)
 					r.Post("/push", h.GitPush)

@@ -74,6 +74,13 @@ export function stopPreset(id: string): Promise<PresetActionResult> {
   });
 }
 
+export async function gitListBranches(id: string): Promise<string[]> {
+  const data = await request<{ branches: string[] }>(
+    `/api/services/${id}/git/branches`,
+  );
+  return data.branches;
+}
+
 export function gitFetch(id: string): Promise<GitStateDTO> {
   return request<GitStateDTO>(`/api/services/${id}/git/fetch`, {
     method: "POST",

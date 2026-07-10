@@ -42,6 +42,22 @@ func (h *Handlers) runGitAction(w http.ResponseWriter, r *http.Request, action f
 	})
 }
 
+func (h *Handlers) GitBranches(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "serviceID")
+	cfg, ok := h.Workspace.GetService(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "service_not_found", fmt.Sprintf("service %q not found", id))
+		return
+	}
+
+	branches, err := h.Git.ListBranches(r.Context(), cfg.Path)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "git_branches_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"branches": branches})
+}
+
 func (h *Handlers) GitFetch(w http.ResponseWriter, r *http.Request) {
 	h.runGitAction(w, r, h.Git.Fetch)
 }

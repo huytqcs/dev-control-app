@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -56,6 +57,50 @@ func (s *Service) Status(ctx context.Context, repoPath string) (Status, error) {
 		Ahead:  ahead,
 		Behind: behind,
 	}, nil
+}
+
+// ListBranches returns every local branch plus every remote-tracking
+// branch's short name (e.g. "origin/feature-x" contributes "feature-x"),
+// deduplicated and sorted. `git checkout <name>` on a remote-only name
+// auto-creates a local tracking branch (git's own DWIM behavior), so
+// surfacing remote names here is what lets a search-and-checkout UI reach
+// branches that haven't been checked out locally yet.
+func (s *Service) ListBranches(ctx context.Context, repoPath string) ([]string, error) {
+	out, err := runGit(ctx, repoPath, defaultTimeout, "for-each-ref",
+		"--format=%(refname)", "refs/heads", "refs/remotes")
+	if err != nil {
+		return nil, fmt.Errorf("list branches: %w", err)
+	}
+
+	seen := make(map[string]bool)
+	branches := []string{}
+	add := func(name string) {
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		branches = append(branches, name)
+	}
+
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "refs/heads/"):
+			add(strings.TrimPrefix(line, "refs/heads/"))
+		case strings.HasPrefix(line, "refs/remotes/"):
+			rest := strings.TrimPrefix(line, "refs/remotes/")
+			// rest is "<remote>/<branch...>" — drop the remote segment, and
+			// skip the "<remote>/HEAD" pointer ref, not a real branch.
+			if idx := strings.Index(rest, "/"); idx != -1 {
+				if name := rest[idx+1:]; name != "HEAD" {
+					add(name)
+				}
+			}
+		}
+	}
+
+	sort.Strings(branches)
+	return branches, nil
 }
 
 func (s *Service) Fetch(ctx context.Context, repoPath string) error {
