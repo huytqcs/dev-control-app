@@ -1,5 +1,13 @@
 # Dev Control App V2 — Gamma Implementation Plan
 
+**Status: mostly shipped.** T-070 → T-081 and T-094 implemented, smoke-tested
+live, and merged. **Not done**: T-082 (dedicated card/panel visual polish —
+folded into the minimal integration wiring instead, not its own pass) and
+T-095 (a written, repeatable smoke-test checklist doc — smoke testing was
+done live each time, but never distilled into a document). See "Shipped
+notes" below for two real bugs the live smoke test caught that unit tests
+alone missed.
+
 Scope: TASKS.md Sprint 4 ("productivity features + polish"), T-070 → T-082,
 plus cross-cutting T-094 (frontend component tests) and T-095 (end-to-end
 manual checklist). Builds on the alpha runtime and beta's presets/health/
@@ -156,19 +164,45 @@ components from this phase can ship with tests instead of retrofitting them.
 
 ---
 
-## Open questions to resolve before starting
+## Open questions — resolved
 
-- **T-080 reading** — confirmed above as "Stop All" action, not stop-on-exit
-  default. Flag if that's not the intended interpretation.
-- **Open-terminal target** — recommend `open -a Terminal <path>` (zero
-  config, ships on every Mac) as the default, with an optional
-  `terminalApp:` config field later if iTerm/Warp support is wanted. Don't
-  build the config field speculatively before someone actually needs it.
-- **Open-repo target** — recommend Finder (`open <path>`) as the default
-  rather than guessing an editor; let a future `editorCommand:` field
-  (`code`, `cursor`, etc.) opt a service into launching an editor instead,
-  per the TASKS.md T-075 note. Same "don't build it until needed" stance.
-- **Action run concurrency** — recommend one in-flight run per
-  `(service, action)` pair, rejecting a second start the same way
-  `StartService`/`StartWorker` already reject a double-start. Confirm this
-  before T-070, since it affects the action runtime's state shape.
+All four were confirmed as recommended and shipped as-is:
+
+- **T-080 reading** — "Stop All" action (`POST /api/stop-all`, SPEC.md
+  §19.9), not stop-on-exit. `Shutdown()` stayed a no-op.
+- **Open-terminal target** — `open -a Terminal <path>`, no config field.
+- **Open-repo target** — Finder (`open <path>`), no config field.
+- **Action run concurrency** — one in-flight run per `(service, action)`
+  pair; a second call returns `409 action_already_running`
+  (`actions.ErrActionAlreadyRunning`).
+
+---
+
+## Shipped notes: two bugs the live smoke test caught
+
+Both of these passed every unit test and only surfaced once actually driven
+end-to-end in a real browser against a real backend — same lesson alpha and
+beta each drew independently, now a three-for-three pattern worth trusting.
+
+1. **Action runner processes were being killed almost instantly.**
+   `actions.Service.Run` used `exec.CommandContext(ctx, ...)` where `ctx` was
+   the *HTTP request's* context. `Run` is designed to start the process and
+   return immediately while it keeps running in the background — but
+   `net/http` cancels a request's context the moment its handler returns,
+   which happens right after `Run` hands back a run ID. That SIGKILLed the
+   action process before it could produce output or reach its real exit
+   code (`fail-test` reported `exitCode: -1, error: "signal: killed"`
+   instead of running its actual `exit 3`). Fixed to plain `exec.Command`,
+   matching `runtime.OSProcessRunner.Start`'s existing choice for the exact
+   same reason (`internal/runtime/process_runner.go`). Regression test:
+   `TestService_Run_SurvivesCallerContextCancellation`.
+2. **`frontend/src/components/logs/` was never in git, ever, since the very
+   first commit.** `frontend/.gitignore`'s bare `logs` pattern (meant for
+   root-level npm debug logs) matches a directory of that name *anywhere* in
+   the tree with no leading slash — silently excluding the entire log-viewer
+   component directory from every commit since alpha. `git log --all
+   --diff-filter=A -- frontend/src/components/logs` confirms zero history.
+   Fixed: `logs` → `/logs`.
+
+Neither of these would show up in `go test`/`vitest` alone — both needed the
+actual app running.

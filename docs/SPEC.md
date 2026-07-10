@@ -873,11 +873,27 @@ Payload:
 ```json
 {
   "runId": "action_001",
+  "actionId": "install",
   "entry": {
     "line": "Bundle install complete"
   }
 }
 ```
+
+### `action.completed`
+Emitted once, when the run's process exits (success or failure) — the
+terminal signal a client uses to stop showing "running" for that action.
+Payload:
+```json
+{
+  "runId": "action_001",
+  "actionId": "install",
+  "exitCode": 0,
+  "success": true,
+  "error": ""
+}
+```
+`error` is only present (non-empty) when `success` is false.
 
 ---
 
@@ -1063,7 +1079,12 @@ Return updated git state.
 # 19.7 Actions endpoints
 
 ## `POST /api/services/:id/actions/:actionId`
-Run custom action.
+Starts a one-off run of a config-defined action (`ServiceConfig.Actions`) and
+returns immediately — output and completion stream over WS (`action.output`,
+`action.completed`), not in this response. Deliberately separate from
+service/worker runtime state (ARCHITECTURE.md §12.3): actions have no
+persistent state of their own beyond "is a run currently in flight for this
+(service, action) pair".
 
 ### Response example
 ```json
@@ -1073,18 +1094,48 @@ Run custom action.
 }
 ```
 
+### Errors
+- `404 action_not_found` — no action with that ID configured on the service
+- `409 action_already_running` — a run is already in flight for this
+  (service, action) pair; only one at a time is allowed
+
 ---
 
 # 19.8 Open helper endpoints
 
+Thin macOS `open`-command wrappers (ARCHITECTURE.md §19) — not core domain
+logic. No IDE/terminal-app configurability yet: Finder and Terminal.app are
+the fixed defaults (GAMMA_PLAN.md decision — add a config field like
+`editorCommand`/`terminalApp` later only if actually needed).
+
 ## `POST /api/services/:id/open-browser`
-Open first matching URL or preferred URL.
+Opens the service's first configured `openUrls` entry in the default
+browser. `422 no_url_configured` if the service has no `openUrls`.
 
 ## `POST /api/services/:id/open-repo`
-Open repo in Finder or IDE depending on endpoint split.
+Opens the service's repo path in Finder.
 
 ## `POST /api/services/:id/open-terminal`
-Open terminal at repo path.
+Opens Terminal.app at the service's repo path.
+
+---
+
+# 19.9 Stop-all endpoint
+
+## `POST /api/stop-all`
+Stops every currently running worker and service, workspace-wide — the
+deliberate "Stop All" UI action (GAMMA_PLAN.md T-080 decision), not an
+implicit stop-on-exit default, which would fight `ReconcileOrphans`'ing
+purpose of letting services survive a devctl backend restart (§26.1).
+Independently-controlled workers are stopped first (not just `autoStart`
+ones, since those aren't tied to their parent service's lifecycle).
+
+### Response
+```json
+{ "errors": [] }
+```
+Same partial-failure shape as the preset endpoints (§19.5) — one message per
+service/worker that failed to stop, empty array on full success.
 
 ---
 

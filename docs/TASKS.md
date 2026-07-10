@@ -778,6 +778,11 @@ Verify real daily-use flow:
 
 # Sprint 4 — Productivity features + polish
 
+**Status: mostly done.** T-070 → T-081 and T-094 shipped — see
+docs/GAMMA_PLAN.md for implementation notes and two real bugs the live
+smoke test caught. T-082 (dedicated visual polish) and T-095 (a written
+smoke-test checklist) are not done.
+
 ## T-070 — Implement action runner
 - **Priority:** P2
 - **Estimate:** L
