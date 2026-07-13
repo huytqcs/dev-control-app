@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { startPreset, stopPreset } from "@/lib/api";
@@ -25,6 +25,29 @@ export function PresetBar({
 }) {
   const queryClient = useQueryClient();
   const [expandedPresetId, setExpandedPresetId] = useState<string | null>(null);
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+
+  // The failed-count popover previously only closed by re-clicking its own
+  // toggle — no outside-click/Escape dismissal, unlike BranchCheckoutForm's
+  // similar dropdown (which closes on blur).
+  useEffect(() => {
+    if (!expandedPresetId) return;
+
+    function handlePointerDown(e: MouseEvent) {
+      const node = rowRefs.current.get(expandedPresetId!);
+      if (node && !node.contains(e.target as Node)) setExpandedPresetId(null);
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setExpandedPresetId(null);
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [expandedPresetId]);
 
   const start = useMutation({
     mutationFn: startPreset,
@@ -68,6 +91,10 @@ export function PresetBar({
         return (
           <div
             key={preset.id}
+            ref={(el) => {
+              if (el) rowRefs.current.set(preset.id, el);
+              else rowRefs.current.delete(preset.id);
+            }}
             className="relative flex items-center gap-1 rounded-md border p-1"
           >
             <span className="px-1.5 text-xs font-medium text-muted-foreground">

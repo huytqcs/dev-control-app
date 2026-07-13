@@ -28,18 +28,25 @@ export function ServiceDetailsPanel({
   const queryClient = useQueryClient();
   const forceKill = useMutation({
     mutationFn: () => forceKillService(service!.id),
-    onSuccess: (updated) =>
+    onSuccess: (updated) => {
+      setConfirmingKill(false);
       queryClient.setQueryData<ServiceDTO[]>(servicesQueryKey, (prev) =>
         prev?.map((s) => (s.id === updated.id ? updated : s)),
-      ),
+      );
+    },
   });
   const openBrowserMut = useMutation({ mutationFn: () => openBrowser(service!.id) });
   const openRepoMut = useMutation({ mutationFn: () => openRepo(service!.id) });
   const openTerminalMut = useMutation({ mutationFn: () => openTerminal(service!.id) });
   const [errorExpanded, setErrorExpanded] = useState(false);
-  // Reset on service switch — otherwise an expanded error stays expanded
-  // when selecting into a different, unrelated service's error.
-  useEffect(() => setErrorExpanded(false), [service?.id]);
+  const [confirmingKill, setConfirmingKill] = useState(false);
+  // Reset on service switch — otherwise an expanded error (or a pending
+  // force-kill confirmation) stays active when selecting into a different,
+  // unrelated service.
+  useEffect(() => {
+    setErrorExpanded(false);
+    setConfirmingKill(false);
+  }, [service?.id]);
 
   if (!service) {
     return (
@@ -178,14 +185,30 @@ export function ServiceDetailsPanel({
           ) : null}
 
           <div className="mt-auto border-t pt-4">
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={forceKill.isPending}
-              onClick={() => forceKill.mutate()}
-            >
-              Force kill
-            </Button>
+            {confirmingKill ? (
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={forceKill.isPending}
+                  onClick={() => forceKill.mutate()}
+                >
+                  {forceKill.isPending ? "Killing…" : "Confirm force kill"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={forceKill.isPending}
+                  onClick={() => setConfirmingKill(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Button size="sm" variant="destructive" onClick={() => setConfirmingKill(true)}>
+                Force kill
+              </Button>
+            )}
             <p className="mt-2 text-xs text-muted-foreground">
               Kills whatever is listening on port {service.port || "—"},
               regardless of whether devctl started it. Use this if a service

@@ -1,17 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { STATUS_DOT } from "@/components/common/StatusBadge";
 import { cn } from "@/lib/utils";
 import { startWorker, stopWorker } from "@/lib/api";
 import { servicesQueryKey } from "@/hooks/useServicesQuery";
-import type { ServiceDTO, WorkerSummaryDTO } from "@/types/api";
-
-const DOT: Record<string, string> = {
-  running: "bg-emerald-500",
-  starting: "bg-amber-500 animate-pulse",
-  failed: "bg-red-500",
-  stopped: "bg-muted-foreground/50",
-};
+import type { ServiceDTO, ServiceStatus, WorkerSummaryDTO } from "@/types/api";
 
 export function WorkerControls({ service }: { service: ServiceDTO }) {
   const queryClient = useQueryClient();
@@ -52,7 +46,12 @@ export function WorkerControls({ service }: { service: ServiceDTO }) {
           >
             <div className="flex items-center gap-2">
               <span
-                className={cn("size-1.5 rounded-full", DOT[worker.status] ?? DOT.stopped)}
+                className={cn(
+                  "size-1.5 rounded-full",
+                  STATUS_DOT[worker.status as ServiceStatus] ?? STATUS_DOT.stopped,
+                  (worker.status === "starting" || worker.status === "stopping") &&
+                    "animate-pulse",
+                )}
               />
               <span className="text-sm font-medium">{worker.name}</span>
               <Badge variant="outline">{worker.status}</Badge>

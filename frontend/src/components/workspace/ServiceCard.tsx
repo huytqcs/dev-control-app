@@ -34,9 +34,17 @@ export function ServiceCard({
 
   return (
     <Card
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
       className={cn(
-        "cursor-pointer gap-2.5 transition-colors hover:bg-muted/50",
+        "cursor-pointer gap-2.5 transition-colors outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring",
         isSelected && "ring-2 ring-primary",
       )}
     >

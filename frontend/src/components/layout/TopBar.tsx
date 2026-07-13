@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { PresetBar } from "@/components/workspace/PresetBar";
+import { ConnectionIndicator } from "@/components/common/ConnectionIndicator";
 import { stopAll } from "@/lib/api";
 import { servicesQueryKey } from "@/hooks/useServicesQuery";
 import type { PresetDTO, ServiceDTO } from "@/types/api";
@@ -42,6 +43,7 @@ export function TopBar({
         </span>
       </div>
       <div className="ml-auto flex items-center gap-2">
+        <ConnectionIndicator />
         <PresetBar presets={presets} services={services} />
         <Button
           size="sm"

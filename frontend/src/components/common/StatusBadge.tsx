@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ServiceStatus } from "@/types/api";
 
-const STATUS_LABEL: Record<ServiceStatus, string> = {
+export const STATUS_LABEL: Record<ServiceStatus, string> = {
   running: "Running",
   starting: "Starting",
   stopping: "Stopping",
@@ -10,7 +10,7 @@ const STATUS_LABEL: Record<ServiceStatus, string> = {
   stopped: "Stopped",
 };
 
-const STATUS_DOT: Record<ServiceStatus, string> = {
+export const STATUS_DOT: Record<ServiceStatus, string> = {
   running: "bg-emerald-500",
   starting: "bg-amber-500",
   stopping: "bg-amber-500",

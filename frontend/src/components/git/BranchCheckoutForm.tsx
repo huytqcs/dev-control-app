@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
 const MAX_VISIBLE_MATCHES = 8;
@@ -49,6 +49,16 @@ export function BranchCheckoutForm({
     trimmedQuery !== "" &&
     !branches.some((b) => b.toLowerCase() === trimmedQuery.toLowerCase());
 
+  // Keyboard-navigable highlight through the dropdown (branch rows, then the
+  // "create" row last if present) — previously Enter always acted on
+  // matches[0] with no way to arrow down to another result.
+  const totalRows = matches.length + (canCreate ? 1 : 0);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [trimmedQuery, matches.length, canCreate]);
+
   function submit(branch: string) {
     const trimmed = branch.trim();
     if (!trimmed || trimmed === currentBranch) return;
@@ -67,11 +77,9 @@ export function BranchCheckoutForm({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          // Enter acts on the top dropdown row — same thing clicking it
-          // does — instead of a separate "Checkout" button re-submitting
-          // whatever's typed as if it were its own path.
-          if (matches.length > 0) {
-            submit(matches[0]);
+          if (highlightedIndex < matches.length) {
+            const b = matches[highlightedIndex];
+            if (b) submit(b);
           } else if (canCreate) {
             submitCreate();
           }
@@ -85,6 +93,18 @@ export function BranchCheckoutForm({
           }}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setOpen(true);
+              setHighlightedIndex((i) => Math.min(i + 1, Math.max(totalRows - 1, 0)));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setHighlightedIndex((i) => Math.max(i - 1, 0));
+            } else if (e.key === "Escape") {
+              setOpen(false);
+            }
+          }}
           placeholder={branchesLoading ? "loading branches…" : "search branches…"}
           disabled={pending}
           className="h-8 w-full min-w-0 rounded-md border bg-background px-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -93,11 +113,12 @@ export function BranchCheckoutForm({
 
       {open && (matches.length > 0 || canCreate) ? (
         <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-md border bg-popover text-sm shadow-md">
-          {matches.map((b) => (
+          {matches.map((b, i) => (
             <li key={b}>
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setHighlightedIndex(i)}
                 onClick={() => {
                   setQuery(b);
                   submit(b);
@@ -105,6 +126,7 @@ export function BranchCheckoutForm({
                 disabled={b === currentBranch}
                 className={cn(
                   "block w-full truncate px-2 py-1 text-left hover:bg-muted disabled:cursor-default disabled:text-muted-foreground disabled:hover:bg-transparent",
+                  i === highlightedIndex && "bg-muted",
                 )}
               >
                 {b}
@@ -117,8 +139,12 @@ export function BranchCheckoutForm({
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setHighlightedIndex(matches.length)}
                 onClick={submitCreate}
-                className="block w-full truncate px-2 py-1 text-left text-primary hover:bg-muted"
+                className={cn(
+                  "block w-full truncate px-2 py-1 text-left text-primary hover:bg-muted",
+                  highlightedIndex === matches.length && "bg-muted",
+                )}
               >
                 Create &ldquo;{trimmedQuery}&rdquo; from {currentBranch || "current branch"}
               </button>

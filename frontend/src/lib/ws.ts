@@ -14,17 +14,40 @@ const RECONNECT_DELAY_MS = 1500;
 // were "the last consumer" and close a socket another hook still needed,
 // leaving a stale-but-still-delivering socket alongside the new one, which
 // double-processed every broadcast.)
+export type ConnectionStatus = "connecting" | "connected" | "disconnected";
+
 class RealtimeClient {
   private socket: WebSocket | null = null;
   private connecting = false;
   private listeners = new Set<Listener>();
   private reconnectListeners = new Set<() => void>();
+  private statusListeners = new Set<(status: ConnectionStatus) => void>();
   private everConnected = false;
+  private status: ConnectionStatus = "connecting";
 
   connect() {
     if (this.socket || this.connecting) return;
     this.connecting = true;
     this.open();
+  }
+
+  getStatus(): ConnectionStatus {
+    return this.status;
+  }
+
+  // Lets a status indicator (e.g. TopBar) show "reconnecting" instead of
+  // silently going stale — otherwise a dropped WS is invisible: the UI just
+  // stops updating with no signal anything's wrong (onReconnect resyncs data
+  // once the socket's back, but nothing today tells the user it was gone).
+  onStatusChange(listener: (status: ConnectionStatus) => void): () => void {
+    this.statusListeners.add(listener);
+    return () => this.statusListeners.delete(listener);
+  }
+
+  private setStatus(status: ConnectionStatus) {
+    if (this.status === status) return;
+    this.status = status;
+    this.statusListeners.forEach((listener) => listener(status));
   }
 
   // Fires on every successful (re)connect after the first. Anything missed
@@ -44,6 +67,7 @@ class RealtimeClient {
 
     socket.addEventListener("open", () => {
       this.connecting = false;
+      this.setStatus("connected");
       if (this.everConnected) {
         this.reconnectListeners.forEach((listener) => listener());
       }
@@ -62,6 +86,7 @@ class RealtimeClient {
     socket.addEventListener("close", () => {
       this.socket = null;
       this.connecting = false;
+      this.setStatus("disconnected");
       setTimeout(() => this.open(), RECONNECT_DELAY_MS);
     });
   }

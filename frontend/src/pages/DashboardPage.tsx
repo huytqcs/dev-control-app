@@ -23,6 +23,8 @@ export function DashboardPage() {
       workspaceName={workspaceQuery.data?.name}
       services={services}
       presets={workspaceQuery.data?.presets ?? []}
+      selectedId={selectedId}
+      onSelect={setSelectedId}
     >
       {servicesQuery.isLoading ? (
         <LoadingState label="Loading services…" />
@@ -38,7 +40,7 @@ export function DashboardPage() {
             selectedId={selectedId}
             onSelect={setSelectedId}
           />
-          <div className="h-full w-[420px] shrink-0">
+          <div className="h-80 w-full shrink-0 lg:h-full lg:w-[420px]">
             <ServiceDetailsPanel service={selectedService} />
           </div>
         </>
