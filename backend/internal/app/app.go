@@ -12,6 +12,7 @@ import (
 
 	"devctl/internal/actions"
 	"devctl/internal/api"
+	"devctl/internal/applog"
 	"devctl/internal/config"
 	"devctl/internal/git"
 	"devctl/internal/health"
@@ -53,6 +54,13 @@ func New(configPath string) (*App, error) {
 	// (T-058 "on service load", not polled thereafter).
 	runtimeMgr.ReconcileOrphans(context.Background())
 	go runtimeMgr.RefreshAllGitStates(context.Background())
+
+	// Watches each repo's .git/HEAD and refs/heads for branch switches made
+	// outside the app (e.g. `git checkout` in an external terminal), which
+	// RefreshAllGitStates alone would never see again after startup.
+	if err := runtimeMgr.StartGitWatcher(context.Background()); err != nil {
+		applog.Error("app", "git watcher: %v", err)
+	}
 
 	// Always embed: during `go run` (daily devctl development) dist/ only
 	// has its .gitkeep placeholder, so this static fallback just 404s and
