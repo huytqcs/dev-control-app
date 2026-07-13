@@ -22,8 +22,24 @@ export function BranchCheckoutForm({
   const trimmedQuery = query.trim();
   const matches = useMemo(() => {
     const q = trimmedQuery.toLowerCase();
-    const pool = q ? branches.filter((b) => b.toLowerCase().includes(q)) : branches;
-    return pool.slice(0, MAX_VISIBLE_MATCHES);
+    if (!q) return branches.slice(0, MAX_VISIBLE_MATCHES);
+
+    // Rank exact match, then prefix match, ahead of "contains" matches —
+    // otherwise an alphabetically-early branch that merely contains the
+    // query (e.g. "chore/production-deploy") fills the MAX_VISIBLE_MATCHES
+    // slots and pushes an exact match like "production" out of the list
+    // entirely, even though it passed the filter.
+    const rank = (b: string) => {
+      const lower = b.toLowerCase();
+      if (lower === q) return 0;
+      if (lower.startsWith(q)) return 1;
+      return 2;
+    };
+
+    return branches
+      .filter((b) => b.toLowerCase().includes(q))
+      .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+      .slice(0, MAX_VISIBLE_MATCHES);
   }, [branches, trimmedQuery]);
 
   // No exact match for the typed name — offer to branch it off HEAD instead
