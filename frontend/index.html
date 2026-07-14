@@ -5,6 +5,19 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>frontend</title>
+    <script>
+      // Applied synchronously, before first paint, so switching themes (or a
+      // system-dark OS) never flashes the wrong palette while React mounts.
+      (function () {
+        var stored = localStorage.getItem("devctl-theme");
+        var theme = stored === "light" || stored === "dark" ? stored : "system";
+        var isDark =
+          theme === "dark" ||
+          (theme === "system" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", isDark);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

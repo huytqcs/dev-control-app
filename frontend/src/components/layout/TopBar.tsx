@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { PresetBar } from "@/components/workspace/PresetBar";
 import { ConnectionIndicator } from "@/components/common/ConnectionIndicator";
+import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { stopAll } from "@/lib/api";
 import { servicesQueryKey } from "@/hooks/useServicesQuery";
 import type { PresetDTO, ServiceDTO } from "@/types/api";
@@ -53,6 +54,7 @@ export function TopBar({
         >
           Stop All
         </Button>
+        <ThemeToggle />
       </div>
       {stopAllMut.data?.errors.length ? (
         <span className="text-xs text-destructive">
