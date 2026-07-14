@@ -9,7 +9,9 @@ import type { LogEntry } from "@/types/api";
 import {
   formatLogLine,
   isErrorLine,
+  isWarningLine,
   NEAR_BOTTOM_THRESHOLD_PX,
+  stripAnsi,
   type SeverityFilter,
 } from "./LogViewer.helpers";
 
@@ -199,6 +201,7 @@ export function LogViewer({ serviceId }: { serviceId: string }) {
 
 function LogLine({ entry }: { entry: LogEntry }) {
   const errorish = isErrorLine(entry.line);
+  const warningish = !errorish && isWarningLine(entry.line);
 
   return (
     <div
@@ -206,12 +209,14 @@ function LogLine({ entry }: { entry: LogEntry }) {
         "whitespace-pre-wrap break-all",
         entry.source === "stderr" && "text-red-500",
         errorish && "border-l-2 border-red-500 bg-red-500/10 pl-2 -ml-2",
+        warningish && "border-l-2 border-amber-500 bg-amber-500/10 pl-2 -ml-2",
+        warningish && entry.source !== "stderr" && "text-amber-600 dark:text-amber-500",
       )}
     >
       <span className="mr-2 text-muted-foreground">
         {new Date(entry.time).toLocaleTimeString()}
       </span>
-      {entry.line}
+      {stripAnsi(entry.line)}
     </div>
   );
 }
